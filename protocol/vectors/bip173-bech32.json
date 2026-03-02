@@ -1,0 +1,26 @@
+{
+  "description": "BIP173 bech32 address encoding/decoding test vectors",
+  "source": "https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors",
+  "valid_addresses": [
+    {
+      "address": "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4",
+      "scriptpubkey_hex": "0014751e76e8199196d454941c45d1b3a323f1433bd6"
+    },
+    {
+      "address": "tb1qrp33g0q5b5698ahp5jnf0y5emu3vr34aazm3yn",
+      "scriptpubkey_hex": "00141863143c14c5166804bd19203356da136c985678"
+    },
+    {
+      "address": "tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy",
+      "scriptpubkey_hex": "0020000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433"
+    }
+  ],
+  "invalid_addresses": [
+    "tc1qw508d6qejxtdg4y5r3zarvary0c5xw7kg3g4ty",
+    "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5",
+    "BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2",
+    "bc1rw5uspcuh",
+    "bc10w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw5rljs90",
+    "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P"
+  ]
+}

@@ -1,0 +1,47 @@
+name: CI Signer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "signer/**"
+      - "protocol/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "signer/**"
+      - "protocol/**"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: "8"
+          distribution: "temurin"
+
+      - name: Install Apache Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      # TODO: Install Java ME SDK / WTK in CI
+      # For now this validates that the Ant build file is syntactically correct
+      - name: Validate build.xml
+        working-directory: signer
+        run: ant -projecthelp
+
+      # TODO: Enable once crypto source and test harness are in place
+      # - name: Build
+      #   working-directory: signer
+      #   run: ant clean build
+      #
+      # - name: Run tests
+      #   working-directory: signer
+      #   run: ant test
+      #
+      # - name: Size check
+      #   working-directory: signer
+      #   run: ant size-check

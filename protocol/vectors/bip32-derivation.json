@@ -1,0 +1,63 @@
+{
+  "description": "BIP32 HD key derivation test vectors",
+  "source": "https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#test-vectors",
+  "vectors": [
+    {
+      "name": "Test Vector 1",
+      "seed": "000102030405060708090a0b0c0d0e0f",
+      "chains": [
+        {
+          "path": "m",
+          "xpub": "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8",
+          "xprv": "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+        },
+        {
+          "path": "m/0'",
+          "xpub": "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw",
+          "xprv": "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"
+        },
+        {
+          "path": "m/0'/1",
+          "xpub": "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ",
+          "xprv": "xprv9wTYmMFdV23N2TdNG573QoEsfRRWKQGEc8MeED3qiBM9AdNmqmNm6phmjWFyZJrMfBhp87zS9VHK96f9lvtTpg1cKhEMkYfJCKTd4EHUCsY"
+        },
+        {
+          "path": "m/0'/1/2'",
+          "xpub": "xpub6D4BDPcP2GT577Vvch3R8wDkScZWzQzMMUm3PWbmWvVJrZwQY4VUNgqFJPMM3No2dFDFGTsxxpG5uJh7n7epu4trkrX7x7DogT5Uv6fcLW5",
+          "xprv": "xprv9z4pot5VBttmtdRTWfWQmoH1taj2axGVzFqSb8C9xaxKymcFzXBDptWmT7FwuEzG3ryjH4ktypQSAewRiNMjANTtpgP4mLTj34bhnZX7UiM"
+        },
+        {
+          "path": "m/0'/1/2'/2",
+          "xpub": "xpub6FHa3kMFr1sXQto9W3qDgEYHpf1RPjYpA4P63y65oko52PGj1xt2U4h8ZeCMLkgFBHeZ9ov9GW6Cmqfs3H83QcEVEBfBCaxZMgqWbmdCHvkb",
+          "xprv": "xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef"
+        },
+        {
+          "path": "m/0'/1/2'/2/1000000000",
+          "xpub": "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFGoGQTE",
+          "xprv": "xprvA2JDeKCSNNZky6uBCviVfJSKyQ1mDYahRjijr5idH2WwLsEd4Hsb2Tyh8RfQMuPh7f7RtyzTtdrbdqqsunu5Mm3wDvUAKRHSC34sJ7in334"
+        }
+      ]
+    },
+    {
+      "name": "Test Vector 2",
+      "seed": "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542",
+      "chains": [
+        {
+          "path": "m",
+          "xpub": "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB",
+          "xprv": "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U"
+        },
+        {
+          "path": "m/0",
+          "xpub": "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
+          "xprv": "xprv9vHkqa6EV4sPZHYqZznhT2NPtPCjKuDKGY38FBWLvgaDx45zo9WQRUT3dKYnjwih2yJD9mkrocEZXo1ex8G81dwSM1fwqWpWkeS3v86pgKt"
+        },
+        {
+          "path": "m/0/2147483647'",
+          "xpub": "xpub6ASAVgeehLbnN3jFcNevoqDL4NfType9C8pe8B4Hz4GKQFcRsa8V6rWyzNo9KSyiKKD9yk4G1F4DqwjcBnAY9W5DLsMbaj1LBCFKMKNtrigX",
+          "xprv": "xprv9wSp6B7kry3Vj9m1zSnLvN3xH8RdsPP1Mh7fAOs5DO2kKupR5MDVRDo2s67Yw7LqMkU4EGNwBn9E4HP46EqXMqLFp2RFLhOdD49vekMxNFe"
+        }
+      ]
+    }
+  ]
+}

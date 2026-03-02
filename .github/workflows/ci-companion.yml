@@ -1,0 +1,70 @@
+name: CI Companion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "companion/**"
+      - "protocol/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "companion/**"
+      - "protocol/**"
+
+jobs:
+  rust:
+    name: Rust (core + tui)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-action/setup@v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        working-directory: companion/core
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        working-directory: companion/core
+        run: cargo clippy -- -D warnings
+
+      - name: Test core
+        working-directory: companion/core
+        run: cargo test
+
+      - name: Build TUI
+        working-directory: companion/tui
+        run: cargo build
+
+      - name: Test TUI
+        working-directory: companion/tui
+        run: cargo test
+
+  # TODO: Enable once web/desktop/extension/mobile scaffolds exist
+  # web:
+  #   name: Web (Next.js)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 9
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: pnpm
+  #         cache-dependency-path: companion/web/pnpm-lock.yaml
+  #     - run: pnpm install
+  #       working-directory: companion/web
+  #     - run: pnpm lint
+  #       working-directory: companion/web
+  #     - run: pnpm test
+  #       working-directory: companion/web
