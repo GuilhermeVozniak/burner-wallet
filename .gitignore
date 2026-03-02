@@ -1,0 +1,86 @@
+# === Java ME / Signer ===
+*.class
+*.jar
+*.jad
+*.cod
+!signer/lib/*.jar
+signer/build/
+signer/dist/
+signer/bin/
+signer/preprocessed/
+signer/preverified/
+
+# === Rust / Companion Core + TUI ===
+target/
+Cargo.lock
+*.rlib
+*.rmeta
+
+# === Node / TypeScript / Web / Desktop / Extension / Mobile ===
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# === WASM ===
+pkg/
+*.wasm
+
+# === React Native ===
+ios/Pods/
+android/.gradle/
+android/app/build/
+*.apk
+*.aab
+*.ipa
+
+# === Electron ===
+release/
+
+# === Chrome Extension ===
+companion/extension/dist/
+
+# === IDE ===
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# === Environment / Secrets ===
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+
+# === Tools (downloaded, not tracked) ===
+tools/proguard-*/
+tools/proguard
+tools/freej2me-plus/
+
+# === Misc ===
+*.log
+*.tmp
+*.bak
+*.orig
+coverage/
+.nyc_output/
