@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="burner-wallet-signer" default="build" basedir=".">
+    <description>
+        Burner Wallet Signer - Java ME MIDlet for Nokia C1-01.
+        Requires JDK 8 (via jenv) and ProGuard in ../tools/proguard/.
+    </description>
+
+    <!-- Paths -->
+    <property name="src.dir" value="src"/>
+    <property name="res.dir" value="res"/>
+    <property name="lib.dir" value="lib"/>
+    <property name="build.dir" value="build"/>
+    <property name="classes.dir" value="${build.dir}/classes"/>
+    <property name="dist.dir" value="dist"/>
+    <property name="proguard.home" value="${basedir}/../tools/proguard"/>
+
+    <!-- MIDP/CLDC stub JARs for bootclasspath -->
+    <property name="midp.jar" value="${lib.dir}/midpapi20.jar"/>
+    <property name="cldc.jar" value="${lib.dir}/cldcapi11.jar"/>
+
+    <!-- MIDlet metadata -->
+    <property name="midlet.name" value="BurnerWallet"/>
+    <property name="midlet.vendor" value="Guilherme Vozniak"/>
+    <property name="midlet.version" value="0.1.0"/>
+    <property name="midlet.class" value="org.burnerwallet.ui.BurnerWalletMIDlet"/>
+
+    <!-- JAR size budget for Nokia C1-01 (1 MB limit) -->
+    <property name="jar.size.limit" value="1048576"/>
+
+    <!-- Register ProGuard Ant task -->
+    <taskdef resource="proguard/ant/task.properties"
+             classpath="${proguard.home}/lib/proguard-ant.jar"/>
+
+    <!-- ============================================================ -->
+    <target name="help" description="Show available targets">
+        <echo>
+Available targets:
+  build      - Compile, preverify (ProGuard), and package the MIDlet
+  clean      - Remove all build artifacts
+  test       - Run unit tests (TODO)
+  check      - Run static analysis (TODO)
+  size-check - Verify JAR is within device budget
+  package    - Alias for build
+        </echo>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="clean" description="Remove build artifacts">
+        <delete dir="${build.dir}"/>
+        <delete dir="${dist.dir}"/>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="init">
+        <mkdir dir="${classes.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="compile" depends="init" description="Compile Java sources">
+        <javac srcdir="${src.dir}"
+               destdir="${classes.dir}"
+               source="1.4"
+               target="1.4"
+               bootclasspath="${cldc.jar}:${midp.jar}"
+               includeantruntime="false"
+               debug="true">
+            <classpath>
+                <pathelement location="${midp.jar}"/>
+                <pathelement location="${cldc.jar}"/>
+            </classpath>
+        </javac>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="unprocessed-jar" depends="compile"
+            description="Package classes into unprocessed JAR for ProGuard input">
+        <jar destfile="${build.dir}/${midlet.name}-unprocessed.jar"
+             basedir="${classes.dir}">
+            <fileset dir="${res.dir}" erroronmissingdir="false"/>
+        </jar>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="preverify" depends="unprocessed-jar"
+            description="Shrink and preverify with ProGuard -microedition">
+        <proguard>
+            -injars      ${build.dir}/${midlet.name}-unprocessed.jar
+            -outjars     ${dist.dir}/${midlet.name}.jar
+            -libraryjars ${cldc.jar}
+            -libraryjars ${midp.jar}
+            -microedition
+            -dontobfuscate
+            -dontoptimize
+            -dontnote
+            -dontwarn
+            -keep public class * extends javax.microedition.midlet.MIDlet
+        </proguard>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="jad" depends="preverify" description="Generate JAD descriptor">
+        <length file="${dist.dir}/${midlet.name}.jar" property="jar.size"/>
+        <echo file="${dist.dir}/${midlet.name}.jad">MIDlet-Name: ${midlet.name}
+MIDlet-Version: ${midlet.version}
+MIDlet-Vendor: ${midlet.vendor}
+MIDlet-1: ${midlet.name}, , ${midlet.class}
+MIDlet-Jar-URL: ${midlet.name}.jar
+MIDlet-Jar-Size: ${jar.size}
+MicroEdition-Profile: MIDP-2.0
+MicroEdition-Configuration: CLDC-1.1
+</echo>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="build" depends="jad"
+            description="Full build: compile, preverify, package">
+        <echo>Build complete: ${dist.dir}/${midlet.name}.jar (${jar.size} bytes)</echo>
+    </target>
+
+    <target name="package" depends="build" description="Alias for build"/>
+
+    <!-- ============================================================ -->
+    <target name="size-check" depends="preverify"
+            description="Verify JAR is within device size budget">
+        <length file="${dist.dir}/${midlet.name}.jar" property="jar.size"/>
+        <echo>JAR size: ${jar.size} bytes (limit: ${jar.size.limit} bytes)</echo>
+        <fail message="JAR exceeds size budget of ${jar.size.limit} bytes!">
+            <condition>
+                <length file="${dist.dir}/${midlet.name}.jar"
+                        when="greater"
+                        length="${jar.size.limit}"/>
+            </condition>
+        </fail>
+        <echo>Size check PASSED.</echo>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="test" description="Run unit tests (placeholder)">
+        <echo>TODO: Test harness not yet configured.</echo>
+    </target>
+
+    <target name="check" description="Run static analysis (placeholder)">
+        <echo>TODO: Checkstyle/PMD not yet configured.</echo>
+    </target>
+</project>
