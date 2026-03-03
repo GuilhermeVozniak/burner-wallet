@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Burner Wallet is an air-gapped Bitcoin cold-storage wallet. An old Nokia C1-01 feature phone (Java ME) acts as the offline signer — it never touches the internet. A multi-platform companion ecosystem handles chain access, PSBT construction, and broadcasting. Data crosses the air gap via QR codes (primary), with Bluetooth OBEX, MicroSD, and manual text entry as fallbacks.
 
-**Current milestone:** M1a complete, M1b next. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b will add encrypted storage, PIN, LCDUI screens.
+**Current milestone:** M1b complete, M1c next. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests total). M1c will add PSBT parsing/signing and QR transport.
 
 ## Architecture
 
@@ -27,10 +27,11 @@ tools/
   proguard/          ProGuard 7.8.2 (symlink, not tracked)
 ```
 
-The **signer** is an extremely constrained Java ME environment (Java 1.4 source level, no generics, no autoboxing, no enhanced for-loop, no varargs, 1 MB JAR budget, ~242KB currently). It compiles against CLDC 1.1 + MIDP 2.0 stub JARs in `signer/lib/` and uses Bouncy Castle (`bcprov-jdk14`) for crypto, shrunk by ProGuard. Signer modules:
-- `core/` — HashUtils, HexCodec, ByteArrayUtils, Base58, Bech32, CryptoError
+The **signer** is an extremely constrained Java ME environment (Java 1.4 source level, no generics, no autoboxing, no enhanced for-loop, no varargs, 1 MB JAR budget, ~286KB currently). It compiles against CLDC 1.1 + MIDP 2.0 stub JARs in `signer/lib/` and uses Bouncy Castle (`bcprov-jdk14`) for crypto, shrunk by ProGuard. Signer modules:
+- `core/` — HashUtils, HexCodec, ByteArrayUtils, Base58, Bech32, CryptoError, AesUtils, EntropyCollector
 - `chains/bitcoin/` — Secp256k1, Bip39Wordlist, Bip39Mnemonic, Bip32Key, Bip32Derivation, Bip44Path, BitcoinAddress, NetworkParams
-- `ui/` — BurnerWalletMIDlet (scaffold)
+- `storage/` — WalletStore, WalletData, RecordStoreAdapter, MidpRecordStoreAdapter
+- `ui/` — BurnerWalletMIDlet, ScreenManager, PinScreen, OnboardingScreen, WalletHomeScreen, ReceiveScreen, SettingsScreen
 
 The **companion core** (`companion/core/`) is the Rust crypto library. Modules: `mnemonic.rs` (BIP39), `keys.rs` (BIP32), `derivation.rs` (BIP44/84), `address.rs` (BIP84+BIP173 bech32), `network.rs`, `error.rs`.
 
@@ -54,7 +55,7 @@ make test
 cd companion/core && cargo test                    # 32 tests
 cd companion/core && cargo test <test_name>        # single test
 cd companion/tui && cargo test
-cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 114 tests
+cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 153 tests
 
 # Lint
 cd companion/core && cargo clippy -- -D warnings   # CI enforces -D warnings
