@@ -40,12 +40,12 @@ public class WalletData {
      * @param salt       16-byte PBKDF2 salt
      * @param iv         16-byte AES IV
      * @param iterations PBKDF2 iteration count (big-endian)
-     * @param ciphertext 80-byte encrypted payload
-     * @return 116-byte blob
+     * @param ciphertext encrypted payload (80 bytes for empty passphrase, longer with passphrase)
+     * @return blob of length 36 + ciphertext.length
      */
     public static byte[] serializeSeedBlob(byte[] salt, byte[] iv,
                                            int iterations, byte[] ciphertext) {
-        byte[] blob = new byte[SEED_BLOB_SIZE];
+        byte[] blob = new byte[36 + ciphertext.length];
         System.arraycopy(salt, 0, blob, 0, 16);
         System.arraycopy(iv, 0, blob, 16, 16);
         blob[32] = (byte) (iterations >>> 24);
