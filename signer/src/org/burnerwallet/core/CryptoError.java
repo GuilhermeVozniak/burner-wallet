@@ -14,6 +14,8 @@ public class CryptoError extends Exception {
     public static final int ERR_INVALID_KEY = 4;
     public static final int ERR_ENCODING = 5;
     public static final int ERR_CHECKSUM = 6;
+    public static final int ERR_ENCRYPTION = 7;
+    public static final int ERR_DECRYPTION = 8;
 
     private int errorCode;
 
