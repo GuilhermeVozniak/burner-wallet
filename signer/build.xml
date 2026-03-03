@@ -163,6 +163,8 @@ MicroEdition-Configuration: CLDC-1.1
                 <pathelement location="${bc.jar}"/>
                 <pathelement location="${junit.jar}"/>
                 <pathelement location="${hamcrest.jar}"/>
+                <pathelement location="${midp.jar}"/>
+                <pathelement location="${cldc.jar}"/>
             </classpath>
         </javac>
     </target>
@@ -176,6 +178,8 @@ MicroEdition-Configuration: CLDC-1.1
                 <pathelement location="${bc.jar}"/>
                 <pathelement location="${junit.jar}"/>
                 <pathelement location="${hamcrest.jar}"/>
+                <pathelement location="${midp.jar}"/>
+                <pathelement location="${cldc.jar}"/>
             </classpath>
             <formatter type="brief" usefile="false"/>
             <batchtest>
