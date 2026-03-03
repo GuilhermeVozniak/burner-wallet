@@ -77,6 +77,11 @@ tools/proguard-*/
 tools/proguard
 tools/freej2me-plus/
 
+# === Signer libs (downloaded, not tracked — use make setup-tools) ===
+signer/lib/bcprov-jdk14.jar
+signer/lib/junit-4.13.2.jar
+signer/lib/hamcrest-core-1.3.jar
+
 # === Misc ===
 *.log
 *.tmp
