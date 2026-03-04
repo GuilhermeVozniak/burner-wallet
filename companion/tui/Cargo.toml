@@ -8,10 +8,13 @@ repository = "https://github.com/GuilhermeVozniak/burner-wallet"
 
 [dependencies]
 burner-companion-core = { path = "../core" }
+bitcoin = "0.32"
+bdk_wallet = "1"
+bip39 = { version = "2", features = ["rand"] }
 ratatui = "0.29"
 crossterm = "0.28"
 clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+hex = "0.4"
 
 [[bin]]
 name = "burner-companion"
