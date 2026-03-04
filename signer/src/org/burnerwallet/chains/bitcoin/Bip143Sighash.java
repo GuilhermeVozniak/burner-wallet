@@ -1,6 +1,5 @@
 package org.burnerwallet.chains.bitcoin;
 
-import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CompactSize;
 import org.burnerwallet.core.CryptoError;
 import org.burnerwallet.core.HashUtils;
