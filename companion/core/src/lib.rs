@@ -5,11 +5,14 @@
 //! broadcasting. Built on `rust-bitcoin` and BDK.
 
 pub mod address;
+pub mod broadcast;
 pub mod derivation;
 pub mod error;
 pub mod keys;
 pub mod mnemonic;
 pub mod network;
+pub mod psbt;
+pub mod wallet;
 
 pub use error::Error;
 pub use network::NetworkConfig;
