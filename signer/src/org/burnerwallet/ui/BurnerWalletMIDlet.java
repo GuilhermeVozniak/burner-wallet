@@ -4,17 +4,22 @@ import javax.microedition.midlet.MIDlet;
 import javax.microedition.midlet.MIDletStateChangeException;
 
 import org.burnerwallet.chains.bitcoin.Bip39Mnemonic;
+import org.burnerwallet.chains.bitcoin.PsbtParser;
+import org.burnerwallet.chains.bitcoin.PsbtSerializer;
+import org.burnerwallet.chains.bitcoin.PsbtSigner;
+import org.burnerwallet.chains.bitcoin.PsbtTransaction;
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
 import org.burnerwallet.storage.MidpRecordStoreAdapter;
 import org.burnerwallet.storage.WalletStore;
+import org.burnerwallet.transport.ManualEntryScreen;
 
 /**
  * Main MIDlet entry point for the Burner Wallet signer.
  *
  * Wires up the complete lifecycle: onboarding, PIN entry/create/confirm,
- * wallet home, receive address, and settings screens. Implements all
- * listener interfaces to coordinate navigation and storage.
+ * wallet home, receive address, settings, PSBT signing, and QR display.
+ * Implements all listener interfaces to coordinate navigation and storage.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -23,7 +28,10 @@ public class BurnerWalletMIDlet extends MIDlet
                    OnboardingScreen.OnboardingListener,
                    WalletHomeScreen.HomeListener,
                    ReceiveScreen.ReceiveListener,
-                   SettingsScreen.SettingsListener {
+                   SettingsScreen.SettingsListener,
+                   TransactionReviewScreen.TransactionReviewListener,
+                   QrDisplayScreen.QrDisplayListener,
+                   ManualEntryScreen.ManualEntryListener {
 
     private ScreenManager screens;
     private WalletStore walletStore;
@@ -169,6 +177,9 @@ public class BurnerWalletMIDlet extends MIDlet
                         null);
                 showHome();
             }
+        } else if (action == WalletHomeScreen.ACTION_SIGN) {
+            ManualEntryScreen entry = new ManualEntryScreen(screens, this);
+            screens.showScreen(entry.getScreen());
         } else if (action == WalletHomeScreen.ACTION_SETTINGS) {
             try {
                 boolean testnet = walletStore.isTestnet();
@@ -193,6 +204,18 @@ public class BurnerWalletMIDlet extends MIDlet
             walletStore.setAddressIndex(newIndex);
         } catch (Exception e) {
             // Best-effort persist; index is still in memory on ReceiveScreen
+        }
+    }
+
+    public void onShowQr(String address) {
+        try {
+            byte[] payload = address.getBytes("UTF-8");
+            QrDisplayScreen qrScreen = new QrDisplayScreen(
+                    screens, this, payload, "Receive Address");
+            screens.showScreen(qrScreen.getScreen());
+        } catch (Exception e) {
+            screens.showError("Failed to show QR: " + e.getMessage(), null);
+            showHome();
         }
     }
 
@@ -224,6 +247,57 @@ public class BurnerWalletMIDlet extends MIDlet
     }
 
     public void onSettingsBack() {
+        showHome();
+    }
+
+    // ---- ManualEntryListener ----
+
+    public void onPsbtEntered(byte[] psbt) {
+        try {
+            boolean testnet = walletStore.isTestnet();
+            PsbtTransaction tx = PsbtParser.parse(psbt);
+            TransactionReviewScreen review = new TransactionReviewScreen(
+                    screens, this, tx, testnet);
+            screens.showScreen(review.getScreen());
+        } catch (CryptoError e) {
+            screens.showError("PSBT parse error: " + e.getMessage(), null);
+            showHome();
+        } catch (Exception e) {
+            screens.showError("Failed to parse PSBT: " + e.getMessage(), null);
+            showHome();
+        }
+    }
+
+    public void onManualEntryCancelled() {
+        showHome();
+    }
+
+    // ---- TransactionReviewListener ----
+
+    public void onApprove(PsbtTransaction psbt) {
+        try {
+            boolean testnet = walletStore.isTestnet();
+            PsbtSigner.sign(psbt, currentSeed, testnet);
+            byte[] signedBytes = PsbtSerializer.serialize(psbt);
+            QrDisplayScreen qrScreen = new QrDisplayScreen(
+                    screens, this, signedBytes, "Signed PSBT");
+            screens.showScreen(qrScreen.getScreen());
+        } catch (CryptoError e) {
+            screens.showError("Signing failed: " + e.getMessage(), null);
+            showHome();
+        } catch (Exception e) {
+            screens.showError("Signing error: " + e.getMessage(), null);
+            showHome();
+        }
+    }
+
+    public void onReject() {
+        showHome();
+    }
+
+    // ---- QrDisplayListener ----
+
+    public void onQrDisplayDone() {
         showHome();
     }
 

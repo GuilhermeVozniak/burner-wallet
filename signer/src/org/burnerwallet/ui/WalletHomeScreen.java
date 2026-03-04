@@ -19,6 +19,9 @@ public class WalletHomeScreen implements CommandListener {
     /** Action constant for Receive Address. */
     public static final int ACTION_RECEIVE = 0;
 
+    /** Action constant for Sign Transaction. */
+    public static final int ACTION_SIGN = 2;
+
     /** Action constant for Settings. */
     public static final int ACTION_SETTINGS = 1;
 
@@ -32,7 +35,8 @@ public class WalletHomeScreen implements CommandListener {
         /**
          * Called when the user selects a home screen action.
          *
-         * @param action ACTION_RECEIVE (0), ACTION_SETTINGS (1), or ACTION_LOCK (-1)
+         * @param action ACTION_RECEIVE (0), ACTION_SIGN (2),
+         *               ACTION_SETTINGS (1), or ACTION_LOCK (-1)
          */
         void onHomeAction(int action);
     }
@@ -53,8 +57,9 @@ public class WalletHomeScreen implements CommandListener {
         this.listener = listener;
 
         menuList = new List("Burner Wallet", Choice.IMPLICIT);
-        menuList.append("Receive Address", null);
-        menuList.append("Settings", null);
+        menuList.append("Receive Address", null);   // index 0
+        menuList.append("Sign Transaction", null);   // index 1
+        menuList.append("Settings", null);            // index 2
 
         lockCmd = new Command("Lock", Command.EXIT, 2);
         menuList.addCommand(lockCmd);
@@ -81,6 +86,8 @@ public class WalletHomeScreen implements CommandListener {
             if (idx == 0) {
                 listener.onHomeAction(ACTION_RECEIVE);
             } else if (idx == 1) {
+                listener.onHomeAction(ACTION_SIGN);
+            } else if (idx == 2) {
                 listener.onHomeAction(ACTION_SETTINGS);
             }
         }

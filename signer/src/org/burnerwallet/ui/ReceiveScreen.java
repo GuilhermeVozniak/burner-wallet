@@ -36,6 +36,13 @@ public class ReceiveScreen implements CommandListener {
         void onAddressIndexChanged(int newIndex);
 
         /**
+         * Called when the user wants to display the address as a QR code.
+         *
+         * @param address the current bech32 address string
+         */
+        void onShowQr(String address);
+
+        /**
          * Called when the user presses Back from the receive screen.
          */
         void onReceiveBack();
@@ -47,8 +54,10 @@ public class ReceiveScreen implements CommandListener {
     private final boolean testnet;
 
     private int addressIndex;
+    private String currentAddress;
     private Form form;
     private final Command nextCmd;
+    private final Command showQrCmd;
     private final Command backCmd;
 
     /**
@@ -69,6 +78,7 @@ public class ReceiveScreen implements CommandListener {
         this.addressIndex = startIndex;
 
         nextCmd = new Command("Next", Command.OK, 1);
+        showQrCmd = new Command("Show QR", Command.SCREEN, 3);
         backCmd = new Command("Back", Command.BACK, 2);
 
         buildForm();
@@ -79,10 +89,12 @@ public class ReceiveScreen implements CommandListener {
      */
     private void buildForm() {
         form = new Form("Receive");
+        currentAddress = null;
 
         try {
             String address = BitcoinAddress.deriveP2wpkhAddress(
                     seed, testnet, 0, false, addressIndex);
+            currentAddress = address;
             String formatted = formatAddress(address);
             form.append(new StringItem("Address:", formatted));
         } catch (CryptoError e) {
@@ -94,6 +106,9 @@ public class ReceiveScreen implements CommandListener {
         form.append(new StringItem("Index:", String.valueOf(addressIndex)));
 
         form.addCommand(nextCmd);
+        if (currentAddress != null) {
+            form.addCommand(showQrCmd);
+        }
         form.addCommand(backCmd);
         form.setCommandListener(this);
     }
@@ -122,6 +137,12 @@ public class ReceiveScreen implements CommandListener {
             buildForm();
             screens.showScreen(form);
             listener.onAddressIndexChanged(addressIndex);
+            return;
+        }
+        if (c == showQrCmd) {
+            if (currentAddress != null) {
+                listener.onShowQr(currentAddress);
+            }
             return;
         }
         if (c == backCmd) {
