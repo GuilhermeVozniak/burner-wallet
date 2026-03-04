@@ -82,6 +82,10 @@ signer/lib/bcprov-jdk14.jar
 signer/lib/junit-4.13.2.jar
 signer/lib/hamcrest-core-1.3.jar
 
+# === Claude Code ===
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+
 # === Misc ===
 *.log
 *.tmp

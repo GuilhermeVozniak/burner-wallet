@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(make *)",
+      "Bash(cd signer && *ant*)",
+      "Bash(cd companion/* && cargo *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git status *)",
+      "Bash(wc *)",
+      "Bash(ls *)",
+      "Bash(cat protocol/vectors/*)",
+      "Bash(java -version)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/java-me-lint.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
