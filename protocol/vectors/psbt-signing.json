@@ -1,0 +1,21 @@
+{
+  "description": "Cross-implementation PSBT signing vector — must produce identical results in Rust and Java ME",
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "passphrase": "",
+  "derivation_path": "m/84'/0'/0'/0/0",
+  "network": "mainnet",
+  "pubkey": "0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c",
+  "pubkey_hash": "c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2",
+  "unsigned_tx": "0200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200000000",
+  "witness_utxo_value": 200000,
+  "witness_utxo_script": "0014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2",
+  "sighash": "60750e6c99870ec5f3666575e81cc4798a82058955757a3d8377ac017f360fba",
+  "signature_der_sighash": "30440220036fc40e1b9e9abdcdc42215b5cb279b61d85cb34b89e1cc16948b00a2285ceb02202b6c1261ee8cf198c4a380753d98e12f25bb94b9e576574bb19e96f03cfbea9101",
+  "unsigned_psbt": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2000000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e20000",
+  "signed_psbt": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2000000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e222020330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c4730440220036fc40e1b9e9abdcdc42215b5cb279b61d85cb34b89e1cc16948b00a2285ceb02202b6c1261ee8cf198c4a380753d98e12f25bb94b9e576574bb19e96f03cfbea91010000",
+  "notes": {
+    "tx_description": "Version 2, 1 input spending fake prevout aaaa...aaaa:0 (200000 sats), 1 output sending 100000 sats to bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+    "sighash_type": "SIGHASH_ALL (0x01)",
+    "signature_scheme": "ECDSA secp256k1 with RFC 6979 deterministic k, low-S enforced (BIP 62/146)"
+  }
+}
