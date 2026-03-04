@@ -17,6 +17,7 @@ public class CryptoError extends Exception {
     public static final int ERR_ENCRYPTION = 7;
     public static final int ERR_DECRYPTION = 8;
     public static final int ERR_SIGNING = 9;
+    public static final int ERR_PSBT = 10;
 
     private int errorCode;
 
