@@ -12,6 +12,7 @@ import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
 import org.burnerwallet.storage.MidpRecordStoreAdapter;
 import org.burnerwallet.storage.WalletStore;
+import org.burnerwallet.transport.CameraScanner;
 import org.burnerwallet.transport.ManualEntryScreen;
 
 /**
@@ -31,6 +32,7 @@ public class BurnerWalletMIDlet extends MIDlet
                    SettingsScreen.SettingsListener,
                    TransactionReviewScreen.TransactionReviewListener,
                    QrDisplayScreen.QrDisplayListener,
+                   QrScanScreen.QrScanListener,
                    ManualEntryScreen.ManualEntryListener {
 
     private ScreenManager screens;
@@ -178,8 +180,16 @@ public class BurnerWalletMIDlet extends MIDlet
                 showHome();
             }
         } else if (action == WalletHomeScreen.ACTION_SIGN) {
-            ManualEntryScreen entry = new ManualEntryScreen(screens, this);
-            screens.showScreen(entry.getScreen());
+            CameraScanner probe = new CameraScanner();
+            if (probe.isAvailable()) {
+                QrScanScreen scan = new QrScanScreen(screens, this);
+                screens.showScreen(scan.getScreen());
+                scan.startScanning();
+            } else {
+                ManualEntryScreen entry =
+                        new ManualEntryScreen(screens, this);
+                screens.showScreen(entry.getScreen());
+            }
         } else if (action == WalletHomeScreen.ACTION_SETTINGS) {
             try {
                 boolean testnet = walletStore.isTestnet();
@@ -248,6 +258,18 @@ public class BurnerWalletMIDlet extends MIDlet
 
     public void onSettingsBack() {
         showHome();
+    }
+
+    // ---- QrScanListener ----
+
+    public void onScanComplete(byte[] payload) {
+        onPsbtEntered(payload);
+    }
+
+    public void onScanCancelled() {
+        // Fall back to manual entry when scan is cancelled
+        ManualEntryScreen entry = new ManualEntryScreen(screens, this);
+        screens.showScreen(entry.getScreen());
     }
 
     // ---- ManualEntryListener ----
