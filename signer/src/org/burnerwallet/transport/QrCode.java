@@ -54,7 +54,7 @@ public final class QrCode {
      * Format bits for each ECC level.
      * Index by ECC_LOW..ECC_HIGH.
      */
-    private static final int[] ECC_FORMAT_BITS = {1, 0, 3, 2};
+    static final int[] ECC_FORMAT_BITS = {1, 0, 3, 2};
 
     // Number of ECC levels
     private static final int NUM_ECC_LEVELS = 4;
@@ -568,14 +568,22 @@ public final class QrCode {
     /*---- Private helper functions ----*/
 
     private int[] getAlignmentPatternPositions() {
-        if (version == 1) {
+        return getAlignmentPatternPositions(version, size);
+    }
+
+    /**
+     * Returns alignment pattern center positions for the given version.
+     * Package-visible so QrDecoder can reuse this logic.
+     */
+    static int[] getAlignmentPatternPositions(int ver, int sz) {
+        if (ver == 1) {
             return new int[0];
         } else {
-            int numAlign = version / 7 + 2;
-            int step = (version * 8 + numAlign * 3 + 5) / (numAlign * 4 - 4) * 2;
+            int numAlign = ver / 7 + 2;
+            int step = (ver * 8 + numAlign * 3 + 5) / (numAlign * 4 - 4) * 2;
             int[] result = new int[numAlign];
             result[0] = 6;
-            for (int i = result.length - 1, pos = size - 7; i >= 1; i--, pos -= step) {
+            for (int i = result.length - 1, pos = sz - 7; i >= 1; i--, pos -= step) {
                 result[i] = pos;
             }
             return result;
@@ -583,7 +591,7 @@ public final class QrCode {
     }
 
 
-    private static int getNumRawDataModules(int ver) {
+    static int getNumRawDataModules(int ver) {
         if (ver < MIN_VERSION || ver > MAX_VERSION) {
             throw new IllegalArgumentException("Version number out of range");
         }
@@ -605,7 +613,7 @@ public final class QrCode {
     }
 
 
-    private static byte[] reedSolomonComputeDivisor(int degree) {
+    static byte[] reedSolomonComputeDivisor(int degree) {
         if (degree < 1 || degree > 255) {
             throw new IllegalArgumentException("Degree out of range");
         }
@@ -626,7 +634,7 @@ public final class QrCode {
     }
 
 
-    private static byte[] reedSolomonComputeRemainder(byte[] data, byte[] divisor) {
+    static byte[] reedSolomonComputeRemainder(byte[] data, byte[] divisor) {
         byte[] result = new byte[divisor.length];
         for (int b = 0; b < data.length; b++) {
             int factor = (data[b] ^ result[0]) & 0xFF;
@@ -640,7 +648,7 @@ public final class QrCode {
     }
 
 
-    private static int reedSolomonMultiply(int x, int y) {
+    static int reedSolomonMultiply(int x, int y) {
         int z = 0;
         for (int i = 7; i >= 0; i--) {
             z = (z << 1) ^ ((z >>> 7) * 0x11D);
@@ -721,7 +729,7 @@ public final class QrCode {
     private static final int PENALTY_N4 = 10;
 
 
-    private static final byte[][] ECC_CODEWORDS_PER_BLOCK = {
+    static final byte[][] ECC_CODEWORDS_PER_BLOCK = {
         // Version: (index 0 is padding, set to illegal value)
         //0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40    Error correction level
         {-1,  7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30},  // Low
@@ -730,7 +738,7 @@ public final class QrCode {
         {-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30},  // High
     };
 
-    private static final byte[][] NUM_ERROR_CORRECTION_BLOCKS = {
+    static final byte[][] NUM_ERROR_CORRECTION_BLOCKS = {
         // Version: (index 0 is padding, set to illegal value)
         //0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40    Error correction level
         {-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4,  4,  4,  4,  4,  6,  6,  6,  6,  7,  8,  8,  9,  9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25},  // Low
