@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "./components/Header";
+import { generateMnemonic, validateMnemonic } from "@/lib/crypto";
 
 type Network = "testnet" | "mainnet" | "signet";
 
@@ -11,26 +12,30 @@ export default function Home() {
   const [network, setNetwork] = useState<Network>("testnet");
   const [importMode, setImportMode] = useState(false);
   const [mnemonicInput, setMnemonicInput] = useState("");
+  const [error, setError] = useState("");
 
   function handleCreate() {
-    // Generate a placeholder 12-word mnemonic note.
-    // Real generation will come from the WASM bridge.
-    const placeholder =
-      "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const phrase = generateMnemonic(12);
     sessionStorage.setItem("bw_network", network);
-    sessionStorage.setItem("bw_mnemonic", placeholder);
+    sessionStorage.setItem("bw_mnemonic", phrase);
     sessionStorage.setItem("bw_source", "generated");
     router.push("/wallet");
   }
 
   function handleImport() {
-    const words = mnemonicInput.trim().split(/\s+/);
+    const phrase = mnemonicInput.trim();
+    const words = phrase.split(/\s+/);
     if (words.length !== 12 && words.length !== 24) {
-      alert("Mnemonic must be 12 or 24 words.");
+      setError("Mnemonic must be 12 or 24 words.");
       return;
     }
+    if (!validateMnemonic(phrase)) {
+      setError("Invalid mnemonic. Check spelling and word order.");
+      return;
+    }
+    setError("");
     sessionStorage.setItem("bw_network", network);
-    sessionStorage.setItem("bw_mnemonic", mnemonicInput.trim());
+    sessionStorage.setItem("bw_mnemonic", phrase);
     sessionStorage.setItem("bw_source", "imported");
     router.push("/wallet");
   }
@@ -77,10 +82,6 @@ export default function Home() {
                 Import Wallet
               </button>
             </div>
-            <div className="note">
-              Create Wallet uses a placeholder mnemonic for now. Real BIP39
-              generation requires the WASM bridge to companion core.
-            </div>
           </div>
         ) : (
           <div className="card">
@@ -92,11 +93,17 @@ export default function Home() {
               <textarea
                 id="mnemonic-input"
                 value={mnemonicInput}
-                onChange={(e) => setMnemonicInput(e.target.value)}
+                onChange={(e) => {
+                  setMnemonicInput(e.target.value);
+                  setError("");
+                }}
                 placeholder="abandon abandon abandon ..."
                 rows={3}
               />
             </div>
+            {error && (
+              <p style={{ color: "#f44", marginBottom: "0.75rem" }}>{error}</p>
+            )}
             <div className="btn-group">
               <button className="btn btn-primary" onClick={handleImport}>
                 Import
@@ -106,6 +113,7 @@ export default function Home() {
                 onClick={() => {
                   setImportMode(false);
                   setMnemonicInput("");
+                  setError("");
                 }}
               >
                 Cancel

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import { broadcastTx } from "@/lib/crypto";
 
 type Network = "testnet" | "mainnet" | "signet";
 
@@ -12,7 +13,8 @@ export default function ReceivePage() {
   const [psbtHex, setPsbtHex] = useState("");
   const [parsed, setParsed] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
-  const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
+  const [txid, setTxid] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const net = sessionStorage.getItem("bw_network") as Network | null;
@@ -29,38 +31,39 @@ export default function ReceivePage() {
   function handleParse() {
     const hex = psbtHex.trim();
     if (!hex) {
-      alert("Please paste the signed PSBT hex.");
+      setError("Please paste the signed PSBT or raw transaction hex.");
       return;
     }
-    // Basic hex validation
     if (!/^[0-9a-fA-F]+$/.test(hex)) {
-      alert("Invalid hex string. PSBT hex must contain only hexadecimal characters.");
+      setError("Invalid hex string.");
       return;
     }
     if (hex.length < 20) {
-      alert("PSBT hex is too short to be valid.");
+      setError("Hex is too short to be a valid transaction.");
       return;
     }
+    setError("");
     setParsed(true);
   }
 
-  function handleBroadcast() {
+  async function handleBroadcast() {
     setBroadcasting(true);
-    // Simulate broadcast attempt
-    setTimeout(() => {
+    setError("");
+    try {
+      const id = await broadcastTx(psbtHex.trim(), network);
+      setTxid(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Broadcast failed");
+    } finally {
       setBroadcasting(false);
-      setBroadcastResult(
-        "Broadcasting requires Esplora API integration via the WASM bridge. " +
-          "This is a placeholder. Once integrated, the signed transaction will " +
-          "be finalized and broadcast to the Bitcoin network."
-      );
-    }, 1000);
+    }
   }
 
   function handleReset() {
     setPsbtHex("");
     setParsed(false);
-    setBroadcastResult(null);
+    setTxid(null);
+    setError("");
   }
 
   return (
@@ -70,31 +73,37 @@ export default function ReceivePage() {
       <main>
         <h1>Receive Signed PSBT</h1>
         <p style={{ color: "#777", marginBottom: "1.5rem" }}>
-          Paste the signed PSBT hex from your air-gapped signer to finalize and
-          broadcast the transaction.
+          Paste the signed transaction hex from your air-gapped signer to
+          broadcast it to the Bitcoin network.
         </p>
 
         {!parsed ? (
           <div className="card">
-            <h2>Signed PSBT Hex</h2>
+            <h2>Transaction Hex</h2>
             <div className="field">
               <label htmlFor="psbt-input">
-                Paste the signed PSBT hex from your signer
+                Paste the raw transaction hex from your signer
               </label>
               <textarea
                 id="psbt-input"
                 value={psbtHex}
-                onChange={(e) => setPsbtHex(e.target.value)}
-                placeholder="70736274ff01..."
+                onChange={(e) => {
+                  setPsbtHex(e.target.value);
+                  setError("");
+                }}
+                placeholder="0200000001..."
                 rows={6}
               />
             </div>
+            {error && (
+              <p style={{ color: "#f44", marginBottom: "0.75rem" }}>{error}</p>
+            )}
             <div className="btn-group">
               <button className="btn btn-primary" onClick={handleParse}>
-                Parse PSBT
+                Parse Transaction
               </button>
               <button className="btn" onClick={() => router.push("/wallet")}>
-                Back to Dashboard
+                Back
               </button>
             </div>
           </div>
@@ -102,58 +111,50 @@ export default function ReceivePage() {
           <>
             <div className="card">
               <h2>Transaction Details</h2>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  marginBottom: "1rem",
-                }}
-              >
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "1rem" }}>
                 <tbody>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      PSBT Length
-                    </td>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Size</td>
                     <td style={{ padding: "0.4rem 0" }}>
-                      {psbtHex.trim().length / 2} bytes
+                      {Math.floor(psbtHex.trim().length / 2)} bytes
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      Network
-                    </td>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Network</td>
                     <td style={{ padding: "0.4rem 0" }}>{network}</td>
                   </tr>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      Status
-                    </td>
-                    <td style={{ padding: "0.4rem 0", color: "#4f4" }}>
-                      Signed (ready to broadcast)
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Status</td>
+                    <td style={{ padding: "0.4rem 0", color: txid ? "#4f4" : "#ff0" }}>
+                      {txid ? "Broadcast" : "Ready to broadcast"}
                     </td>
                   </tr>
                 </tbody>
               </table>
-              <div className="note">
-                Full PSBT parsing and transaction detail extraction require the
-                WASM bridge. This shows basic metadata only.
-              </div>
             </div>
 
             <div className="card">
-              <h2>Raw PSBT</h2>
+              <h2>Raw Hex</h2>
               <div className="hex-display">{psbtHex.trim()}</div>
             </div>
 
-            {broadcastResult && (
+            {txid && (
               <div className="card">
-                <h2>Broadcast Result</h2>
-                <p style={{ color: "#777" }}>{broadcastResult}</p>
+                <h2>Broadcast Successful</h2>
+                <p style={{ color: "#4f4", marginBottom: "0.5rem" }}>Transaction ID:</p>
+                <div className="hex-display">{txid}</div>
+              </div>
+            )}
+
+            {error && (
+              <div className="card">
+                <h2>Error</h2>
+                <p style={{ color: "#f44" }}>{error}</p>
               </div>
             )}
 
             <div className="btn-group">
-              {!broadcastResult && (
+              {!txid && (
                 <button
                   className="btn btn-primary"
                   onClick={handleBroadcast}
@@ -163,17 +164,11 @@ export default function ReceivePage() {
                 </button>
               )}
               <button className="btn" onClick={handleReset}>
-                Paste Another PSBT
+                New Transaction
               </button>
               <button className="btn" onClick={() => router.push("/wallet")}>
                 Back to Dashboard
               </button>
-            </div>
-
-            <div className="note" style={{ marginTop: "1rem" }}>
-              Broadcasting requires Esplora API integration. The signed PSBT
-              will be finalized (witnesses extracted) and the raw transaction
-              broadcast to the Bitcoin network.
             </div>
           </>
         )}

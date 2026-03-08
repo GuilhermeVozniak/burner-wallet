@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import { mnemonicToSeed, deriveAddress, fetchBalance } from "@/lib/crypto";
 
 type Network = "testnet" | "mainnet" | "signet";
 
@@ -12,6 +13,10 @@ export default function WalletPage() {
   const [mnemonic, setMnemonic] = useState("");
   const [source, setSource] = useState("");
   const [showMnemonic, setShowMnemonic] = useState(false);
+  const [address, setAddress] = useState("");
+  const [balance, setBalance] = useState<{ confirmed: number; unconfirmed: number } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
     const net = sessionStorage.getItem("bw_network") as Network | null;
@@ -26,7 +31,27 @@ export default function WalletPage() {
     setNetwork(net || "testnet");
     setMnemonic(mn);
     setSource(src || "unknown");
+
+    // Derive address
+    mnemonicToSeed(mn).then((seed) => {
+      const addr = deriveAddress(seed, net || "testnet", 0, 0);
+      setAddress(addr);
+    });
   }, [router]);
+
+  const handleSync = useCallback(async () => {
+    if (!address) return;
+    setSyncing(true);
+    setSyncError("");
+    try {
+      const bal = await fetchBalance(address, network);
+      setBalance(bal);
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [address, network]);
 
   function handleLogout() {
     sessionStorage.removeItem("bw_network");
@@ -39,6 +64,8 @@ export default function WalletPage() {
     return null;
   }
 
+  const totalSats = balance ? balance.confirmed + balance.unconfirmed : null;
+
   return (
     <>
       <Header network={network} />
@@ -49,7 +76,7 @@ export default function WalletPage() {
         <div className="card">
           <h2>Mnemonic</h2>
           <p style={{ color: "#777", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
-            Source: {source === "generated" ? "Generated (placeholder)" : "Imported"}
+            Source: {source === "generated" ? "Generated" : "Imported"}
           </p>
           {showMnemonic ? (
             <>
@@ -71,51 +98,53 @@ export default function WalletPage() {
 
         <div className="card">
           <h2>Receive Address</h2>
-          <p className="placeholder-value">
-            Connect WASM to derive address
+          {address ? (
+            <div className="hex-display">{address}</div>
+          ) : (
+            <p className="placeholder-value">Deriving...</p>
+          )}
+          <p style={{ color: "#555", fontSize: "0.8rem", marginTop: "0.5rem" }}>
+            BIP84 path: m/84&apos;/{network === "mainnet" ? "0" : "1"}&apos;/0&apos;/0/0
           </p>
-          <div className="note">
-            Address derivation (BIP84) requires the companion core WASM bridge.
-            Once integrated, this will show your first receiving address.
-          </div>
         </div>
 
         <div className="card">
           <h2>Balance</h2>
-          <p
-            style={{
-              fontSize: "1.5rem",
-              fontWeight: 700,
-              color: "#0ff",
-            }}
-          >
-            <span className="placeholder-value" style={{ fontSize: "1rem", fontWeight: 400 }}>
-              Sync to see balance
-            </span>
-          </p>
-          <div className="note">
-            Balance lookup requires Esplora API integration via the WASM bridge.
-          </div>
+          {totalSats !== null ? (
+            <p style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0ff" }}>
+              {totalSats.toLocaleString()} sats
+            </p>
+          ) : (
+            <p className="placeholder-value">
+              {syncing ? "Syncing..." : "Press Sync to fetch balance"}
+            </p>
+          )}
+          {balance && balance.unconfirmed !== 0 && (
+            <p style={{ color: "#777", fontSize: "0.85rem" }}>
+              Confirmed: {balance.confirmed.toLocaleString()} / Unconfirmed: {balance.unconfirmed.toLocaleString()}
+            </p>
+          )}
+          {syncError && (
+            <p style={{ color: "#f44", fontSize: "0.85rem" }}>{syncError}</p>
+          )}
         </div>
 
         <div className="card">
           <h2>Actions</h2>
           <div className="btn-group">
-            <button className="btn btn-primary" onClick={() => router.push("/send")}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSync}
+              disabled={syncing || !address}
+            >
+              {syncing ? "Syncing..." : "Sync"}
+            </button>
+            <button className="btn" onClick={() => router.push("/send")}>
               Send (PSBT)
             </button>
             <button className="btn" onClick={() => router.push("/receive")}>
               Receive Signed PSBT
             </button>
-            <button className="btn" disabled>
-              History
-            </button>
-            <button className="btn" disabled>
-              Sync
-            </button>
-          </div>
-          <div className="note">
-            History and Sync require the WASM bridge and Esplora API connection.
           </div>
         </div>
 
