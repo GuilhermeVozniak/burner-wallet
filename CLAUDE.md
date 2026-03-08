@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Burner Wallet is an air-gapped Bitcoin cold-storage wallet. An old Nokia C1-01 feature phone (Java ME) acts as the offline signer — it never touches the internet. A multi-platform companion ecosystem handles chain access, PSBT construction, and broadcasting. Data crosses the air gap via QR codes (primary), with Bluetooth OBEX, MicroSD, and manual text entry as fallbacks.
 
-**Current milestone:** M2 in progress. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests). M1c delivered PSBT parsing/signing, QR encode/decode/camera, and companion TUI (212 signer tests, 47 companion tests). M2 adds companion TUI testing (30 TUI tests), CI signer build/test/size-check enablement, transaction history, camera QR pipeline, and ImageProcessor (224 signer tests, 48 companion core tests).
+**Current milestone:** M3 in progress. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests). M1c delivered PSBT parsing/signing, QR encode/decode/camera, and companion TUI (212 signer tests, 47 companion tests). M2 delivered TUI testing (30 tests), CI enablement, transaction history, camera QR pipeline, ImageProcessor, and Checkstyle (224 signer tests, 48 companion core tests, 30 TUI tests). M3 adds multi-platform companion scaffolds: Electron desktop, Next.js web, Chrome extension, React Native mobile — all with CI.
 
 ## Architecture
 

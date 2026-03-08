@@ -1,0 +1,3 @@
+body { width: 300px; padding: 1rem; background: #111; color: #eee; font-family: system-ui, sans-serif; }
+h1 { color: #0ff; font-size: 1.2rem; }
+.muted { color: #888; font-size: 0.85rem; }

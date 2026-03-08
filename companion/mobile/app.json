@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Burner Wallet Companion",
+    "slug": "burner-companion",
+    "version": "0.1.0",
+    "platforms": ["ios", "android"],
+    "orientation": "portrait"
+  }
+}

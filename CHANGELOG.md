@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Signer Checkstyle:** Added `checkstyle.xml` config and wired `ant check` target to Checkstyle 10.21.4
 - **Makefile:** Added `lint-companion-tui` target and Checkstyle download to `setup-tools`
 - **Formatting:** Applied `cargo fmt` to companion core and TUI sources
+- **Web scaffold (Next.js 15):** Placeholder app at `companion/web/` with build + lint CI
+- **Desktop scaffold (Electron):** Placeholder app at `companion/desktop/` with TypeScript build CI
+- **Extension scaffold (Chrome Manifest V3):** Placeholder popup at `companion/extension/` with build CI
+- **Mobile scaffold (Expo/React Native):** Placeholder app at `companion/mobile/` with type-check CI
+- **CI companion:** Enabled web, desktop, extension, mobile jobs in ci-companion workflow
+- **Makefile:** Added build/lint/clean targets for all 4 companion platforms
 
 ## [0.1.0-m1c] - 2026-03-04
 

@@ -1,0 +1,16 @@
+{
+  "name": "burner-companion-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "cp src/index.html dist/",
+    "start": "tsc && electron .",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "electron": "^33",
+    "typescript": "^5"
+  }
+}

@@ -1,12 +1,18 @@
 .PHONY: all build test lint clean help \
        signer companion-core companion-tui \
+       companion-web companion-desktop companion-extension companion-mobile \
        test-signer test-companion-core test-companion-tui \
-       lint-signer lint-companion-core lint-companion-tui size-check \
-       emulator setup-tools
+       lint-signer lint-companion-core lint-companion-tui \
+       lint-companion-web lint-companion-desktop lint-companion-extension lint-companion-mobile \
+       size-check emulator setup-tools
 
 SIGNER_DIR   := signer
 CORE_DIR     := companion/core
 TUI_DIR      := companion/tui
+WEB_DIR      := companion/web
+DESKTOP_DIR  := companion/desktop
+EXT_DIR      := companion/extension
+MOBILE_DIR   := companion/mobile
 SIGNER_JAVA  := /Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home
 
 help: ## Show this help
@@ -15,7 +21,7 @@ help: ## Show this help
 
 all: build ## Build everything
 
-build: signer companion-core companion-tui ## Build all targets
+build: signer companion-core companion-tui companion-web companion-desktop companion-extension ## Build all targets
 
 signer: ## Build signer MIDlet (requires JDK 8)
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant clean build
@@ -25,6 +31,18 @@ companion-core: ## Build companion Rust core library
 
 companion-tui: companion-core ## Build companion TUI binary
 	cd $(TUI_DIR) && cargo build
+
+companion-web: ## Build companion web app
+	cd $(WEB_DIR) && pnpm install && pnpm build
+
+companion-desktop: ## Build companion desktop app (TypeScript only)
+	cd $(DESKTOP_DIR) && pnpm install && pnpm build
+
+companion-extension: ## Build companion Chrome extension
+	cd $(EXT_DIR) && pnpm install && pnpm build
+
+companion-mobile: ## Type-check companion mobile app
+	cd $(MOBILE_DIR) && pnpm install && pnpm run build:check
 
 test: test-signer test-companion-core test-companion-tui ## Run all tests
 
@@ -37,7 +55,8 @@ test-companion-core: ## Run companion core tests
 test-companion-tui: ## Run companion TUI tests
 	cd $(TUI_DIR) && cargo test
 
-lint: lint-signer lint-companion-core lint-companion-tui ## Run all linters
+lint: lint-signer lint-companion-core lint-companion-tui \
+      lint-companion-web lint-companion-desktop lint-companion-extension lint-companion-mobile ## Run all linters
 
 lint-signer: ## Run signer static analysis
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant check
@@ -48,6 +67,18 @@ lint-companion-core: ## Run clippy on companion core
 lint-companion-tui: ## Run clippy on companion TUI
 	cd $(TUI_DIR) && cargo clippy -- -D warnings
 
+lint-companion-web: ## Lint companion web app
+	cd $(WEB_DIR) && pnpm lint
+
+lint-companion-desktop: ## Lint companion desktop app
+	cd $(DESKTOP_DIR) && pnpm lint
+
+lint-companion-extension: ## Lint companion Chrome extension
+	cd $(EXT_DIR) && pnpm lint
+
+lint-companion-mobile: ## Lint companion mobile app
+	cd $(MOBILE_DIR) && pnpm lint
+
 size-check: ## Check signer JAR stays within device budget
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant size-check
 
@@ -55,6 +86,10 @@ clean: ## Clean all build artifacts
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant clean || true
 	cd $(CORE_DIR) && cargo clean
 	cd $(TUI_DIR) && cargo clean
+	rm -rf $(WEB_DIR)/.next $(WEB_DIR)/out
+	rm -rf $(DESKTOP_DIR)/dist
+	rm -rf $(EXT_DIR)/dist
+	rm -rf $(MOBILE_DIR)/.expo
 
 emulator: signer ## Launch signer MIDlet in FreeJ2ME-Plus emulator
 	java -jar tools/freej2me-plus/build/freej2me.jar \

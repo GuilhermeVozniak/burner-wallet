@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Burner Wallet Companion",
+  "version": "0.1.0",
+  "description": "Air-gapped Bitcoin wallet companion extension",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": []
+}

@@ -1,0 +1,13 @@
+{
+  "name": "burner-companion-extension",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc && node -e \"const fs=require('fs');['manifest.json'].forEach(f=>fs.copyFileSync(f,'dist/'+f));['popup.html','popup.css'].forEach(f=>fs.copyFileSync('src/'+f,'dist/'+f))\"",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
