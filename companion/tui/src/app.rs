@@ -8,6 +8,7 @@ use bip39::Mnemonic;
 use bitcoin::psbt::Psbt;
 use bitcoin::{Address, Amount, FeeRate, Network};
 
+use burner_companion_core::wallet::TxSummary;
 use burner_companion_core::{broadcast, mnemonic, psbt, wallet};
 
 /// All screens in the TUI application.
@@ -51,6 +52,9 @@ pub struct App {
     pub receive_input: String,
     pub receive_tx_hex: String,
     pub receive_txid: String,
+
+    // Transaction history
+    pub transactions: Vec<TxSummary>,
 }
 
 impl App {
@@ -77,6 +81,7 @@ impl App {
             receive_input: String::new(),
             receive_tx_hex: String::new(),
             receive_txid: String::new(),
+            transactions: Vec::new(),
         };
 
         // If a mnemonic was provided via CLI, initialize immediately
@@ -156,8 +161,12 @@ impl App {
                 Ok(()) => {
                     let balance = wallet::get_balance(w);
                     self.balance_sats = balance.total().to_sat();
+                    self.transactions = wallet::get_transactions(w);
                     self.synced = true;
-                    self.status_message = String::from("Synced successfully.");
+                    self.status_message = format!(
+                        "Synced successfully. {} transactions.",
+                        self.transactions.len()
+                    );
                 }
                 Err(e) => {
                     self.status_message = format!("Sync failed: {}", e);

@@ -12,6 +12,7 @@ import javax.microedition.lcdui.Graphics;
 import javax.microedition.media.control.VideoControl;
 
 import org.burnerwallet.transport.CameraScanner;
+import org.burnerwallet.transport.ImageProcessor;
 import org.burnerwallet.transport.MultiFrameDecoder;
 import org.burnerwallet.transport.QrDecoder;
 
@@ -230,22 +231,35 @@ public class QrScanScreen extends Canvas implements CommandListener {
                     return;
                 }
 
-                // TODO: Convert snapshot image to grayscale boolean[][] grid.
-                // This requires device-specific image decoding (PNG/JPEG)
-                // which varies across J2ME devices. For now, this is a
-                // placeholder — actual image-to-grid conversion will be
-                // implemented when testing on real hardware.
-                //
-                // The decoding pipeline would be:
-                // 1. Decode snapshot bytes to pixel array
-                // 2. Convert to grayscale
-                // 3. Apply adaptive threshold to get boolean[][] grid
-                // 4. Detect finder patterns to locate QR code
-                // 5. Extract and de-warp module grid
-                // 6. Pass to QrDecoder.decode()
-                //
-                // For now, QrDecoder is verified via round-trip tests.
-                // Camera scanning will be validated on-device in M2.
+                // Steps 1-3: snapshot bytes -> grayscale -> boolean grid
+                boolean[][] grid = ImageProcessor.snapshotToGrid(snapshot);
+                if (grid == null) {
+                    return;
+                }
+
+                // NOTE: This grid covers the entire camera frame. For robust
+                // QR decoding from camera, finder pattern detection and
+                // perspective correction (steps 4-5) would be needed.
+                // For now, attempt direct decode — works when the QR code
+                // fills most of the camera frame.
+                int size = grid.length;
+                byte[] decoded = QrDecoder.decode(grid, size);
+                if (decoded == null) {
+                    return;
+                }
+
+                // Feed decoded frame to the multi-frame decoder
+                decoder.addFrame(decoded);
+                if (decoder.isComplete()) {
+                    byte[] payload = decoder.assemble();
+                    stopScanTimer();
+                    listener.onScanComplete(payload);
+                    return;
+                }
+
+                statusMessage = "Frame " + decoder.getReceivedCount()
+                        + "/" + decoder.getTotalCount() + " received";
+                repaint();
 
             } catch (Exception e) {
                 statusMessage = "Scan error";

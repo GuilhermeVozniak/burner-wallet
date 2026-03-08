@@ -1,8 +1,8 @@
 //! PSBT (BIP174) construction, merging, finalization, and serialization.
 
+use bdk_wallet::Wallet;
 use bitcoin::psbt::Psbt;
 use bitcoin::{Address, Amount, FeeRate, Transaction};
-use bdk_wallet::Wallet;
 
 use crate::error::Error;
 
@@ -20,9 +20,7 @@ pub fn create_unsigned_psbt(
         builder.add_recipient(addr.script_pubkey(), *amount);
     }
     builder.fee_rate(fee_rate);
-    builder
-        .finish()
-        .map_err(|e| Error::Psbt(e.to_string()))
+    builder.finish().map_err(|e| Error::Psbt(e.to_string()))
 }
 
 /// Merge a signed PSBT (from the signer) into the original unsigned PSBT.
@@ -105,9 +103,18 @@ mod tests {
 
         // Verify round-trip: the unsigned transaction should be identical
         assert_eq!(psbt.unsigned_tx.version, deserialized.unsigned_tx.version);
-        assert_eq!(psbt.unsigned_tx.lock_time, deserialized.unsigned_tx.lock_time);
-        assert_eq!(psbt.unsigned_tx.input.len(), deserialized.unsigned_tx.input.len());
-        assert_eq!(psbt.unsigned_tx.output.len(), deserialized.unsigned_tx.output.len());
+        assert_eq!(
+            psbt.unsigned_tx.lock_time,
+            deserialized.unsigned_tx.lock_time
+        );
+        assert_eq!(
+            psbt.unsigned_tx.input.len(),
+            deserialized.unsigned_tx.input.len()
+        );
+        assert_eq!(
+            psbt.unsigned_tx.output.len(),
+            deserialized.unsigned_tx.output.len()
+        );
         assert_eq!(
             psbt.unsigned_tx.output[0].value,
             deserialized.unsigned_tx.output[0].value
@@ -173,7 +180,10 @@ mod tests {
         let bytes = serialize_psbt(&different_psbt);
 
         let result = merge_signed_psbt(&mut original, &bytes);
-        assert!(result.is_err(), "Merging PSBTs with different transactions should fail");
+        assert!(
+            result.is_err(),
+            "Merging PSBTs with different transactions should fail"
+        );
     }
 
     #[test]

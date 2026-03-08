@@ -466,8 +466,8 @@ fn draw_receive_confirm(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(widget, area);
 }
 
-fn draw_history(f: &mut Frame, _app: &App, area: Rect) {
-    let lines = vec![
+fn draw_history(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             "  TRANSACTION HISTORY",
@@ -476,25 +476,61 @@ fn draw_history(f: &mut Frame, _app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(Span::styled(
-            "  No transactions yet.",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Transaction history requires wallet persistence,",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  which will be added in a future milestone.",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  [Esc] Back to wallet",
-            Style::default().fg(Color::DarkGray),
-        )),
     ];
+
+    if app.transactions.is_empty() {
+        if app.synced {
+            lines.push(Line::from(Span::styled(
+                "  No transactions found.",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  Sync wallet first to load transaction history.",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!("  {} transactions", app.transactions.len()),
+            Style::default().fg(Color::White),
+        )));
+        lines.push(Line::from(""));
+
+        for tx in &app.transactions {
+            let status = if tx.confirmed {
+                match tx.confirmation_height {
+                    Some(h) => format!("block {}", h),
+                    None => String::from("confirmed"),
+                }
+            } else {
+                String::from("unconfirmed")
+            };
+
+            let (direction, color) = if tx.net >= 0 {
+                (format!("+{} sats", tx.net), Color::Green)
+            } else {
+                (format!("{} sats", tx.net), Color::Red)
+            };
+
+            let txid_short = &tx.txid.to_string()[..8];
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {}..  ", txid_short),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(format!("{:<16}", direction), Style::default().fg(color)),
+                Span::styled(status, Style::default().fg(Color::White)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  [Esc] Back to wallet",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let widget =
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" History "));

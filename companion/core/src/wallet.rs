@@ -1,9 +1,28 @@
-//! Wallet management: create BDK wallets, sync via Esplora, query balance.
+//! Wallet management: create BDK wallets, sync via Esplora, query balance,
+//! and list transactions.
 
+use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::{Balance, Wallet};
-use bitcoin::Network;
+use bitcoin::{Amount, Network, Txid};
 
 use crate::error::Error;
+
+/// Summary of a wallet transaction for display purposes.
+#[derive(Debug, Clone)]
+pub struct TxSummary {
+    /// Transaction ID.
+    pub txid: Txid,
+    /// Amount sent (from our wallet's perspective).
+    pub sent: Amount,
+    /// Amount received (to our wallet's perspective).
+    pub received: Amount,
+    /// Net change in sats (received - sent). Negative means outgoing.
+    pub net: i64,
+    /// Whether the transaction is confirmed.
+    pub confirmed: bool,
+    /// Confirmation height, if confirmed.
+    pub confirmation_height: Option<u32>,
+}
 
 /// Create a BDK wallet from BIP84 descriptors without persistence.
 ///
@@ -43,6 +62,38 @@ pub fn get_balance(wallet: &Wallet) -> Balance {
     wallet.balance()
 }
 
+/// List wallet transactions as summaries, newest first.
+pub fn get_transactions(wallet: &Wallet) -> Vec<TxSummary> {
+    let mut txs: Vec<TxSummary> = wallet
+        .transactions()
+        .map(|wtx| {
+            let (sent, received) = wallet.sent_and_received(&wtx.tx_node.tx);
+            let net = received.to_sat() as i64 - sent.to_sat() as i64;
+            let (confirmed, confirmation_height) = match wtx.chain_position {
+                ChainPosition::Confirmed { anchor, .. } => (true, Some(anchor.block_id.height)),
+                ChainPosition::Unconfirmed { .. } => (false, None),
+            };
+            TxSummary {
+                txid: wtx.tx_node.txid,
+                sent,
+                received,
+                net,
+                confirmed,
+                confirmation_height,
+            }
+        })
+        .collect();
+
+    // Sort: unconfirmed first, then by height descending
+    txs.sort_by(|a, b| match (a.confirmed, b.confirmed) {
+        (false, true) => std::cmp::Ordering::Less,
+        (true, false) => std::cmp::Ordering::Greater,
+        _ => b.confirmation_height.cmp(&a.confirmation_height),
+    });
+
+    txs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,8 +125,7 @@ mod tests {
 
     #[test]
     fn wallet_balance_starts_at_zero() {
-        let wallet =
-            create_wallet(TESTNET_EXTERNAL, TESTNET_INTERNAL, Network::Testnet).unwrap();
+        let wallet = create_wallet(TESTNET_EXTERNAL, TESTNET_INTERNAL, Network::Testnet).unwrap();
         let balance = get_balance(&wallet);
         assert_eq!(balance.total().to_sat(), 0);
     }
@@ -98,5 +148,12 @@ mod tests {
             "Expected tb1q prefix, got: {}",
             addr_str
         );
+    }
+
+    #[test]
+    fn wallet_transactions_empty_on_new_wallet() {
+        let wallet = create_wallet(TESTNET_EXTERNAL, TESTNET_INTERNAL, Network::Testnet).unwrap();
+        let txs = get_transactions(&wallet);
+        assert!(txs.is_empty());
     }
 }

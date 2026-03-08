@@ -2,9 +2,6 @@
 //! online companion. Manages wallet creation, PSBT construction, and
 //! transaction broadcasting via a ratatui-based terminal UI.
 
-mod app;
-mod ui;
-
 use std::io;
 
 use clap::Parser;
@@ -18,7 +15,8 @@ use ratatui::Terminal;
 
 use bitcoin::Network;
 
-use app::{App, Screen};
+use burner_companion_tui::app::{App, Screen};
+use burner_companion_tui::ui;
 
 #[derive(Parser)]
 #[command(

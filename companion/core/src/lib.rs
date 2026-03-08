@@ -18,5 +18,5 @@ pub use error::Error;
 pub use network::NetworkConfig;
 
 // Re-export bitcoin types that consumers need
-pub use bitcoin::Network;
 pub use bip39::Mnemonic;
+pub use bitcoin::Network;

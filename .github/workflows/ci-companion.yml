@@ -28,21 +28,25 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - name: Check formatting
+      - name: Check formatting (core)
         working-directory: companion/core
         run: cargo fmt -- --check
 
-      - name: Clippy
+      - name: Check formatting (tui)
+        working-directory: companion/tui
+        run: cargo fmt -- --check
+
+      - name: Clippy (core)
         working-directory: companion/core
+        run: cargo clippy -- -D warnings
+
+      - name: Clippy (tui)
+        working-directory: companion/tui
         run: cargo clippy -- -D warnings
 
       - name: Test core
         working-directory: companion/core
         run: cargo test
-
-      - name: Build TUI
-        working-directory: companion/tui
-        run: cargo build
 
       - name: Test TUI
         working-directory: companion/tui

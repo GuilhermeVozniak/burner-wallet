@@ -76,6 +76,7 @@ ehthumbs.db
 tools/proguard-*/
 tools/proguard
 tools/freej2me-plus/
+tools/cratedocs-mcp/
 
 # === Signer libs (downloaded, not tracked — use make setup-tools) ===
 signer/lib/bcprov-jdk14.jar

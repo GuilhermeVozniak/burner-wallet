@@ -1,7 +1,7 @@
 //! End-to-end integration test: mnemonic -> seed -> master key -> BIP84 address
 
-use burner_companion_core::{mnemonic, keys, derivation, address};
 use bitcoin::Network;
+use burner_companion_core::{address, derivation, keys, mnemonic};
 
 #[test]
 fn full_wallet_derivation_flow() {

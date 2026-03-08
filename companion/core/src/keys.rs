@@ -1,24 +1,25 @@
 //! BIP32 HD key derivation: master key from seed, child key derivation.
 
-use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
-use bitcoin::NetworkKind;
-use bitcoin::secp256k1::Secp256k1;
 use crate::Error;
+use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::NetworkKind;
 
 /// Derive the BIP32 master extended private key from a raw seed.
 /// Uses mainnet version bytes (xprv/xpub) for test vector compatibility.
 pub fn master_xpriv(seed: &[u8]) -> Result<Xpriv, Error> {
-    Xpriv::new_master(NetworkKind::Main, seed)
-        .map_err(|e| Error::KeyDerivation(e.to_string()))
+    Xpriv::new_master(NetworkKind::Main, seed).map_err(|e| Error::KeyDerivation(e.to_string()))
 }
 
 /// Derive a child extended private key at the given BIP32 path.
 /// Path format: "m/0'/1/2'" or "m/44'/0'/0'"
 pub fn derive_xpriv(master: &Xpriv, path: &str) -> Result<Xpriv, Error> {
     let secp = Secp256k1::signing_only();
-    let path: DerivationPath = path.parse()
+    let path: DerivationPath = path
+        .parse()
         .map_err(|e: bitcoin::bip32::Error| Error::KeyDerivation(e.to_string()))?;
-    master.derive_priv(&secp, &path)
+    master
+        .derive_priv(&secp, &path)
         .map_err(|e| Error::KeyDerivation(e.to_string()))
 }
 

@@ -188,7 +188,22 @@ MicroEdition-Configuration: CLDC-1.1
         </junit>
     </target>
 
-    <target name="check" description="Run static analysis (placeholder)">
-        <echo>TODO: Checkstyle/PMD not yet configured.</echo>
+    <!-- Checkstyle JAR — downloaded via setup-tools or manually -->
+    <property name="checkstyle.jar"
+              value="${basedir}/../tools/checkstyle-10.21.4-all.jar"/>
+
+    <target name="check" depends="compile"
+            description="Run Checkstyle static analysis on source files">
+        <available file="${checkstyle.jar}" property="checkstyle.available"/>
+        <fail unless="checkstyle.available"
+              message="Checkstyle JAR not found at ${checkstyle.jar}. Run: curl -L -o tools/checkstyle-10.21.4-all.jar https://github.com/checkstyle/checkstyle/releases/download/checkstyle-10.21.4/checkstyle-10.21.4-all.jar"/>
+        <taskdef resource="com/puppycrawl/tools/checkstyle/ant/checkstyle-ant-task.properties"
+                 classpath="${checkstyle.jar}"/>
+        <checkstyle config="${basedir}/checkstyle.xml"
+                    failOnViolation="false">
+            <fileset dir="${src.dir}" includes="**/*.java"/>
+            <formatter type="plain"/>
+        </checkstyle>
+        <echo>Checkstyle analysis complete.</echo>
     </target>
 </project>

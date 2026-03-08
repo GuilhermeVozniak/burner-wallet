@@ -1,17 +1,17 @@
 //! BIP39 mnemonic generation and seed derivation.
 
-use bip39::Mnemonic;
 use crate::Error;
+use bip39::Mnemonic;
 
 /// Generate a new BIP39 mnemonic with the given word count (12 or 24).
 pub fn generate_mnemonic(word_count: usize) -> Result<Mnemonic, Error> {
-    Mnemonic::generate(word_count)
-        .map_err(|e| Error::Mnemonic(e.to_string()))
+    Mnemonic::generate(word_count).map_err(|e| Error::Mnemonic(e.to_string()))
 }
 
 /// Parse and validate an existing BIP39 mnemonic phrase.
 pub fn from_phrase(phrase: &str) -> Result<Mnemonic, Error> {
-    phrase.parse::<Mnemonic>()
+    phrase
+        .parse::<Mnemonic>()
         .map_err(|e| Error::Mnemonic(e.to_string()))
 }
 
@@ -79,7 +79,8 @@ mod tests {
 
     #[test]
     fn test_vector_3_letter_advice() {
-        let phrase = "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
+        let phrase =
+            "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
         let m = from_phrase(phrase).unwrap();
         let seed = to_seed(&m, "TREZOR");
         let expected = "d71de856f81a8acc65e6fc851a38d4d7ec216fd0796d0a6827a3ad6ed5511a30fa280f12eb2e47ed2ac03b5c462a0358d18d69fe4f985ec81778c1b370b652a8";

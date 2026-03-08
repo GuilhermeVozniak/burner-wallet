@@ -1,12 +1,12 @@
 //! BIP173 bech32 address generation from seeds via BIP84 derivation.
 
+use crate::derivation;
+use crate::keys;
+use crate::Error;
 use bitcoin::address::{Address, KnownHrp};
 use bitcoin::bip32::{ChildNumber, Xpub};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::Network;
-use crate::keys;
-use crate::derivation;
-use crate::Error;
 
 /// Derive a P2WPKH (native SegWit, bech32) address from a seed.
 ///
@@ -21,13 +21,15 @@ pub fn derive_p2wpkh_address(
     let secp = Secp256k1::new();
     let master = keys::master_xpriv(seed)?;
     let account_path = derivation::bip84_account(network, account);
-    let account_xpriv = master.derive_priv(&secp, &account_path)
+    let account_xpriv = master
+        .derive_priv(&secp, &account_path)
         .map_err(|e| Error::KeyDerivation(e.to_string()))?;
     let account_xpub = Xpub::from_priv(&secp, &account_xpriv);
 
     let change_child = ChildNumber::from_normal_idx(if change { 1 } else { 0 }).unwrap();
     let index_child = ChildNumber::from_normal_idx(index).unwrap();
-    let addr_xpub: Xpub = account_xpub.derive_pub(&secp, &[change_child, index_child])
+    let addr_xpub: Xpub = account_xpub
+        .derive_pub(&secp, &[change_child, index_child])
         .map_err(|e| Error::KeyDerivation(e.to_string()))?;
 
     let compressed_pk = addr_xpub.to_pub();
@@ -47,7 +49,11 @@ mod tests {
         let seed = mnemonic::to_seed(&m, "");
         let addr = derive_p2wpkh_address(&seed, Network::Testnet, 0, false, 0).unwrap();
         let addr_str = addr.to_string();
-        assert!(addr_str.starts_with("tb1q"), "Expected tb1q prefix, got: {}", addr_str);
+        assert!(
+            addr_str.starts_with("tb1q"),
+            "Expected tb1q prefix, got: {}",
+            addr_str
+        );
     }
 
     #[test]
@@ -57,7 +63,11 @@ mod tests {
         let seed = mnemonic::to_seed(&m, "");
         let addr = derive_p2wpkh_address(&seed, Network::Bitcoin, 0, false, 0).unwrap();
         let addr_str = addr.to_string();
-        assert!(addr_str.starts_with("bc1q"), "Expected bc1q prefix, got: {}", addr_str);
+        assert!(
+            addr_str.starts_with("bc1q"),
+            "Expected bc1q prefix, got: {}",
+            addr_str
+        );
     }
 
     #[test]

@@ -27,21 +27,21 @@ jobs:
       - name: Install Apache Ant
         run: sudo apt-get update && sudo apt-get install -y ant
 
-      # TODO: Install Java ME SDK / WTK in CI
-      # For now this validates that the Ant build file is syntactically correct
-      - name: Validate build.xml
+      - name: Run tests
         working-directory: signer
-        run: ant -projecthelp
+        run: ant test
 
-      # TODO: Enable once crypto source and test harness are in place
-      # - name: Build
-      #   working-directory: signer
-      #   run: ant clean build
-      #
-      # - name: Run tests
-      #   working-directory: signer
-      #   run: ant test
-      #
-      # - name: Size check
-      #   working-directory: signer
-      #   run: ant size-check
+      - name: Download ProGuard
+        run: |
+          curl -L -o /tmp/proguard-7.8.2.zip \
+            https://github.com/Guardsquare/proguard/releases/download/v7.8.2/proguard-7.8.2.zip
+          unzip -o /tmp/proguard-7.8.2.zip -d tools/
+          ln -sf proguard-7.8.2 tools/proguard
+
+      - name: Build
+        working-directory: signer
+        run: ant clean build
+
+      - name: Size check
+        working-directory: signer
+        run: ant size-check

@@ -1,7 +1,7 @@
 .PHONY: all build test lint clean help \
        signer companion-core companion-tui \
        test-signer test-companion-core test-companion-tui \
-       lint-signer lint-companion-core size-check \
+       lint-signer lint-companion-core lint-companion-tui size-check \
        emulator setup-tools
 
 SIGNER_DIR   := signer
@@ -37,13 +37,16 @@ test-companion-core: ## Run companion core tests
 test-companion-tui: ## Run companion TUI tests
 	cd $(TUI_DIR) && cargo test
 
-lint: lint-signer lint-companion-core ## Run all linters
+lint: lint-signer lint-companion-core lint-companion-tui ## Run all linters
 
 lint-signer: ## Run signer static analysis
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant check
 
 lint-companion-core: ## Run clippy on companion core
 	cd $(CORE_DIR) && cargo clippy -- -D warnings
+
+lint-companion-tui: ## Run clippy on companion TUI
+	cd $(TUI_DIR) && cargo clippy -- -D warnings
 
 size-check: ## Check signer JAR stays within device budget
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant size-check
@@ -57,12 +60,15 @@ emulator: signer ## Launch signer MIDlet in FreeJ2ME-Plus emulator
 	java -jar tools/freej2me-plus/build/freej2me.jar \
 		"file://$(shell pwd)/signer/dist/BurnerWallet.jar"
 
-setup-tools: ## Download ProGuard and build FreeJ2ME-Plus emulator
+setup-tools: ## Download ProGuard, Checkstyle, and build FreeJ2ME-Plus emulator
 	@echo "Downloading ProGuard 7.8.2..."
 	curl -L -o /tmp/proguard-7.8.2.zip \
 		https://github.com/Guardsquare/proguard/releases/download/v7.8.2/proguard-7.8.2.zip
 	unzip -o /tmp/proguard-7.8.2.zip -d tools/
 	ln -sf proguard-7.8.2 tools/proguard
+	@echo "Downloading Checkstyle 10.21.4..."
+	curl -L -o tools/checkstyle-10.21.4-all.jar \
+		https://github.com/checkstyle/checkstyle/releases/download/checkstyle-10.21.4/checkstyle-10.21.4-all.jar
 	@echo "Building FreeJ2ME-Plus emulator..."
 	test -d tools/freej2me-plus || git clone https://github.com/TASEmulators/freej2me-plus.git tools/freej2me-plus
 	cd tools/freej2me-plus && JAVA_HOME=$(SIGNER_JAVA) ant

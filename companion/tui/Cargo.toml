@@ -16,6 +16,10 @@ crossterm = "0.28"
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
 
+[lib]
+name = "burner_companion_tui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "burner-companion"
 path = "src/main.rs"
