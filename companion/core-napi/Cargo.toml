@@ -1,0 +1,17 @@
+[package]
+name = "burner-companion-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", features = ["napi4"] }
+napi-derive = "2"
+burner-companion-core = { path = "../core" }
+bitcoin = "0.32"
+bip39 = { version = "2", features = ["rand"] }
+
+[build-dependencies]
+napi-build = "2"

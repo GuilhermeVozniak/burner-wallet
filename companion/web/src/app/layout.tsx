@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Burner Wallet Companion",
-  description: "Air-gapped Bitcoin wallet companion",
+  description:
+    "Air-gapped Bitcoin cold-storage wallet companion — web interface",
 };
 
 export default function RootLayout({
@@ -12,8 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ backgroundColor: "#111", color: "#eee", fontFamily: "system-ui, sans-serif", margin: 0, padding: "2rem" }}>
-        {children}
+      <body>
+        <div className="container">{children}</div>
       </body>
     </html>
   );

@@ -1,0 +1,25 @@
+[package]
+name = "burner-companion-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bridge exposing crypto-only subset of Burner Wallet companion for web and extension"
+license = "MIT"
+repository = "https://github.com/GuilhermeVozniak/burner-wallet"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+bitcoin = { version = "0.32", features = ["serde", "rand-std", "base64"] }
+bip39 = { version = "2", features = ["rand"] }
+hex = "0.4"
+# getrandom with "js" feature enables crypto.getRandomValues() for WASM targets
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+hex = "0.4"
