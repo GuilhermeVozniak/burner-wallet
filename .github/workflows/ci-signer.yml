@@ -27,6 +27,10 @@ jobs:
       - name: Install Apache Ant
         run: sudo apt-get update && sudo apt-get install -y ant
 
+      - name: Verify dependency hashes
+        working-directory: signer
+        run: ant verify-deps
+
       - name: Run tests
         working-directory: signer
         run: ant test

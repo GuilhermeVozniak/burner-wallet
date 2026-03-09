@@ -206,4 +206,44 @@ MicroEdition-Configuration: CLDC-1.1
         </checkstyle>
         <echo>Checkstyle analysis complete.</echo>
     </target>
+
+    <!-- ============================================================ -->
+    <!-- Dependency hash verification for supply chain integrity -->
+    <target name="verify-deps"
+            description="Verify SHA-256 hashes of all dependency JARs">
+        <property file="${basedir}/build-hashes.properties"/>
+        <echo>Verifying dependency hashes...</echo>
+
+        <checksum file="${bc.jar}" algorithm="SHA-256"
+                  property="${bcprov-jdk14.jar.sha256}" verifyproperty="bc.ok"/>
+        <fail message="bcprov-jdk14.jar hash mismatch!">
+            <condition><isfalse value="${bc.ok}"/></condition>
+        </fail>
+
+        <checksum file="${cldc.jar}" algorithm="SHA-256"
+                  property="${cldcapi11.jar.sha256}" verifyproperty="cldc.ok"/>
+        <fail message="cldcapi11.jar hash mismatch!">
+            <condition><isfalse value="${cldc.ok}"/></condition>
+        </fail>
+
+        <checksum file="${midp.jar}" algorithm="SHA-256"
+                  property="${midpapi20.jar.sha256}" verifyproperty="midp.ok"/>
+        <fail message="midpapi20.jar hash mismatch!">
+            <condition><isfalse value="${midp.ok}"/></condition>
+        </fail>
+
+        <echo>All dependency hashes verified.</echo>
+    </target>
+
+    <!-- ============================================================ -->
+    <!-- Reproducible build: verify deps, build, and hash output -->
+    <target name="reproducible-build" depends="verify-deps,clean,build"
+            description="Build with dependency verification and output hash">
+        <checksum file="${dist.dir}/${midlet.name}.jar"
+                  algorithm="SHA-256" property="output.sha256"/>
+        <echo>Output JAR SHA-256: ${output.sha256}</echo>
+        <echo file="${dist.dir}/${midlet.name}.jar.sha256"
+              message="${output.sha256}  ${midlet.name}.jar${line.separator}"/>
+        <echo>Hash saved to ${dist.dir}/${midlet.name}.jar.sha256</echo>
+    </target>
 </project>

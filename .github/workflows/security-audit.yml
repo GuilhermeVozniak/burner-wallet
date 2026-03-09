@@ -1,0 +1,163 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    labels: [security]
+  schedule:
+    # Run weekly on Mondays at 06:00 UTC
+    - cron: "0 6 * * 1"
+
+jobs:
+  rust-audit:
+    name: Rust dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-action/setup@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Audit companion core
+        working-directory: companion/core
+        run: cargo audit
+
+      - name: Audit companion TUI
+        working-directory: companion/tui
+        run: cargo audit
+
+      - name: Audit companion WASM bridge
+        working-directory: companion/core-wasm
+        run: cargo audit
+
+  signer-deps:
+    name: Signer dependency verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: "8"
+          distribution: "temurin"
+
+      - name: Install Apache Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      - name: Verify dependency hashes
+        working-directory: signer
+        run: |
+          echo "Verifying signer dependency integrity..."
+          if [ -f build-hashes.properties ]; then
+            ant verify-deps
+          else
+            echo "build-hashes.properties not found, computing hashes..."
+            shasum -a 256 lib/*.jar
+          fi
+
+  npm-audit:
+    name: NPM dependency audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [web, desktop, extension, mobile]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: companion/${{ matrix.project }}/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: companion/${{ matrix.project }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        working-directory: companion/${{ matrix.project }}
+        run: pnpm audit --audit-level=high || true
+        # Allow failures for now — audit findings are tracked, not blocking
+
+  crypto-vectors:
+    name: Cross-implementation verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: "8"
+          distribution: "temurin"
+
+      - name: Install Apache Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-action/setup@v1
+        with:
+          toolchain: stable
+
+      - name: Run signer tests (includes BIP vector tests)
+        working-directory: signer
+        run: ant test
+
+      - name: Run companion core tests (includes BIP vector tests)
+        working-directory: companion/core
+        run: cargo test
+
+      - name: Run WASM bridge tests (includes cross-impl vectors)
+        working-directory: companion/core-wasm
+        run: cargo test
+
+      - name: Verify cross-impl vectors exist
+        run: |
+          echo "Cross-implementation test vectors:"
+          ls -la protocol/vectors/
+          echo "---"
+          cat protocol/vectors/cross-impl-wallet.json
+
+  security-checklist:
+    name: Pre-mainnet checklist
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [rust-audit, signer-deps, crypto-vectors]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check security documentation
+        run: |
+          echo "=== Pre-Mainnet Security Checklist ==="
+          echo ""
+          check_file() {
+            if [ -f "$1" ]; then
+              echo "  [x] $2"
+            else
+              echo "  [ ] $2 (MISSING: $1)"
+            fi
+          }
+          check_file "SECURITY.md" "Security policy"
+          check_file "docs/threat-model.md" "Threat model document"
+          check_file "protocol/vectors/cross-impl-wallet.json" "Cross-impl address vectors"
+          check_file "protocol/vectors/psbt-signing.json" "Cross-impl PSBT signing vectors"
+          check_file "signer/checkstyle.xml" "Signer static analysis config"
+          echo ""
+          echo "=== Manual Review Items (not automated) ==="
+          echo "  [ ] Independent crypto review completed"
+          echo "  [ ] Deterministic build verified by 2+ parties"
+          echo "  [ ] Secure deletion validated on target hardware"
+          echo "  [ ] Recovery flow tested end-to-end"
+          echo "  [ ] Testnet soak period completed"

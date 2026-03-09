@@ -4,7 +4,7 @@
        test-signer test-companion-core test-companion-tui \
        lint-signer lint-companion-core lint-companion-tui \
        lint-companion-web lint-companion-desktop lint-companion-extension lint-companion-mobile \
-       size-check emulator setup-tools
+       size-check verify-deps reproducible-build emulator setup-tools
 
 SIGNER_DIR   := signer
 CORE_DIR     := companion/core
@@ -81,6 +81,12 @@ lint-companion-mobile: ## Lint companion mobile app
 
 size-check: ## Check signer JAR stays within device budget
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant size-check
+
+verify-deps: ## Verify signer dependency JAR hashes
+	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant verify-deps
+
+reproducible-build: ## Build signer with dep verification and output hash
+	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant reproducible-build
 
 clean: ## Clean all build artifacts
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant clean || true
