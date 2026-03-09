@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import SessionGuard from "../components/SessionGuard";
 import QrScanner from "../components/QrScanner";
 import { broadcastTx } from "@/lib/crypto";
 
@@ -20,13 +21,8 @@ export default function ReceivePage() {
 
   useEffect(() => {
     const net = sessionStorage.getItem("bw_network") as Network | null;
-    const mn = sessionStorage.getItem("bw_mnemonic");
-    if (!mn) {
-      router.push("/");
-      return;
-    }
     setNetwork(net || "testnet");
-  }, [router]);
+  }, []);
 
   function handleParse() {
     const hex = psbtHex.trim();
@@ -68,7 +64,7 @@ export default function ReceivePage() {
   }
 
   return (
-    <>
+    <SessionGuard>
       <Header network={network} />
 
       <main>
@@ -212,6 +208,6 @@ export default function ReceivePage() {
           </>
         )}
       </main>
-    </>
+    </SessionGuard>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import SessionGuard from "../components/SessionGuard";
 import QrDisplay from "../components/QrDisplay";
 import {
   mnemonicToSeed,
@@ -35,13 +36,8 @@ export default function SendPage() {
 
   useEffect(() => {
     const net = sessionStorage.getItem("bw_network") as Network | null;
-    const mn = sessionStorage.getItem("bw_mnemonic");
-    if (!mn) {
-      router.push("/");
-      return;
-    }
     setNetwork(net || "testnet");
-  }, [router]);
+  }, []);
 
   async function handleReview() {
     if (!recipient.trim()) {
@@ -121,7 +117,7 @@ export default function SendPage() {
     : "";
 
   return (
-    <>
+    <SessionGuard>
       <Header network={network} />
 
       <main>
@@ -293,6 +289,6 @@ export default function SendPage() {
           </>
         )}
       </main>
-    </>
+    </SessionGuard>
   );
 }

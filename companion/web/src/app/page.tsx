@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "./components/Header";
 import { generateMnemonic, validateMnemonic } from "@/lib/crypto";
+import { startSession, clearSession, isSessionExpired } from "@/lib/session";
 
 type Network = "testnet" | "mainnet" | "signet";
 
@@ -14,11 +15,18 @@ export default function Home() {
   const [mnemonicInput, setMnemonicInput] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (isSessionExpired()) {
+      clearSession();
+    }
+  }, []);
+
   function handleCreate() {
     const phrase = generateMnemonic(12);
     sessionStorage.setItem("bw_network", network);
     sessionStorage.setItem("bw_mnemonic", phrase);
     sessionStorage.setItem("bw_source", "generated");
+    startSession();
     router.push("/wallet");
   }
 
@@ -37,6 +45,7 @@ export default function Home() {
     sessionStorage.setItem("bw_network", network);
     sessionStorage.setItem("bw_mnemonic", phrase);
     sessionStorage.setItem("bw_source", "imported");
+    startSession();
     router.push("/wallet");
   }
 

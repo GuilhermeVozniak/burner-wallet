@@ -17,9 +17,23 @@
     </div>
   </header>
 
+  <!-- Unlock screen (shown when encrypted mnemonic exists) -->
+  <section id="unlock-view" class="hidden">
+    <p class="muted">Wallet is locked. Enter your password to unlock.</p>
+    <div class="password-group">
+      <input type="password" id="unlock-password" placeholder="Password" autocomplete="off">
+      <button id="btn-unlock">Unlock</button>
+    </div>
+  </section>
+
   <!-- No wallet state -->
   <section id="no-wallet">
     <p class="muted">No wallet loaded.</p>
+    <div class="password-group">
+      <label class="field-label" for="setup-password">Set a password to encrypt your wallet</label>
+      <input type="password" id="setup-password" placeholder="Password (min 8 chars)" autocomplete="off">
+      <input type="password" id="setup-password-confirm" placeholder="Confirm password" autocomplete="off">
+    </div>
     <button id="btn-generate">Generate Mnemonic</button>
     <div id="import-section">
       <textarea id="import-input" rows="3" placeholder="Enter 12 or 24 word mnemonic..."></textarea>
@@ -51,6 +65,7 @@
       <div id="balance-unconfirmed" class="muted">-- unconfirmed</div>
     </div>
 
+    <button id="btn-lock" class="secondary-btn">Lock Wallet</button>
     <button id="btn-clear" class="danger-btn">Clear Wallet</button>
   </section>
 

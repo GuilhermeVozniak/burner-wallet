@@ -2,8 +2,9 @@
  * Popup script for the Burner Wallet Chrome extension companion.
  *
  * Manages wallet lifecycle: generate/import mnemonic, derive address,
- * fetch balance from Esplora. State is persisted in chrome.storage.local
- * (with localStorage fallback for dev/testing).
+ * fetch balance from Esplora. The mnemonic is encrypted with a user-provided
+ * password (AES-256-GCM via PBKDF2) before being stored. It is only held
+ * in memory while the popup is open.
  */
 
 import {
@@ -15,72 +16,14 @@ import {
   type Network,
 } from "./lib/crypto";
 
-// ---------------------------------------------------------------------------
-// Storage abstraction (chrome.storage.local with localStorage fallback)
-// ---------------------------------------------------------------------------
-
-interface WalletState {
-  mnemonic: string;
-  network: Network;
-}
-
-async function loadState(): Promise<WalletState | null> {
-  try {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      return new Promise((resolve) => {
-        chrome.storage.local.get(["mnemonic", "network"], (result) => {
-          if (result.mnemonic) {
-            resolve({
-              mnemonic: result.mnemonic,
-              network: result.network || "testnet",
-            });
-          } else {
-            resolve(null);
-          }
-        });
-      });
-    }
-  } catch {
-    // Fall through to localStorage
-  }
-  const mnemonic = localStorage.getItem("bw_mnemonic");
-  if (mnemonic) {
-    return {
-      mnemonic,
-      network: (localStorage.getItem("bw_network") as Network) || "testnet",
-    };
-  }
-  return null;
-}
-
-async function saveState(state: WalletState): Promise<void> {
-  try {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.set({
-        mnemonic: state.mnemonic,
-        network: state.network,
-      });
-      return;
-    }
-  } catch {
-    // Fall through to localStorage
-  }
-  localStorage.setItem("bw_mnemonic", state.mnemonic);
-  localStorage.setItem("bw_network", state.network);
-}
-
-async function clearState(): Promise<void> {
-  try {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.remove(["mnemonic", "network"]);
-      return;
-    }
-  } catch {
-    // Fall through to localStorage
-  }
-  localStorage.removeItem("bw_mnemonic");
-  localStorage.removeItem("bw_network");
-}
+import {
+  storeMnemonic,
+  loadMnemonic,
+  clearMnemonic,
+  hasMnemonic,
+  storeNetwork,
+  loadNetwork,
+} from "./lib/storage";
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -105,15 +48,24 @@ function showStatus(msg: string, type: "error" | "success" | "info"): void {
 // ---------------------------------------------------------------------------
 
 let currentMnemonic: string | null = null;
+let currentPassword: string | null = null;
 let currentNetwork: Network = "testnet";
 let mnemonicVisible = false;
 
+function showUnlockView(): void {
+  $("unlock-view").classList.remove("hidden");
+  $("no-wallet").classList.add("hidden");
+  $("wallet-view").classList.add("hidden");
+}
+
 function showNoWallet(): void {
+  $("unlock-view").classList.add("hidden");
   $("no-wallet").classList.remove("hidden");
   $("wallet-view").classList.add("hidden");
 }
 
 function showWalletView(): void {
+  $("unlock-view").classList.add("hidden");
   $("no-wallet").classList.add("hidden");
   $("wallet-view").classList.remove("hidden");
 }
@@ -146,18 +98,82 @@ async function loadWallet(mnemonic: string, network: Network): Promise<void> {
 
   showWalletView();
   await deriveAndShow();
-  await saveState({ mnemonic, network });
+}
+
+// ---------------------------------------------------------------------------
+// Password validation
+// ---------------------------------------------------------------------------
+
+function validatePassword(password: string): string | null {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+  return null;
+}
+
+function getSetupPasswords(): { password: string; error: string | null } {
+  const pw = ($("setup-password") as HTMLInputElement).value;
+  const confirm = ($("setup-password-confirm") as HTMLInputElement).value;
+
+  const validationError = validatePassword(pw);
+  if (validationError) return { password: "", error: validationError };
+
+  if (pw !== confirm) {
+    return { password: "", error: "Passwords do not match" };
+  }
+
+  return { password: pw, error: null };
 }
 
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
 
+async function onUnlock(): Promise<void> {
+  const pw = ($("unlock-password") as HTMLInputElement).value;
+  if (!pw) {
+    showStatus("Enter your password", "error");
+    return;
+  }
+
+  const btn = $("btn-unlock") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Unlocking...";
+
+  try {
+    const mnemonic = await loadMnemonic(pw);
+    if (!mnemonic) {
+      showStatus("Wrong password", "error");
+      return;
+    }
+
+    currentPassword = pw;
+    const network = (await loadNetwork()) as Network;
+    await loadWallet(mnemonic, network);
+    showStatus("Wallet unlocked", "success");
+  } catch (err) {
+    showStatus(`Unlock failed: ${err}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Unlock";
+    ($("unlock-password") as HTMLInputElement).value = "";
+  }
+}
+
 async function onGenerate(): Promise<void> {
+  const { password, error } = getSetupPasswords();
+  if (error) {
+    showStatus(error, "error");
+    return;
+  }
+
   try {
     const mnemonic = generateMnemonic(12);
+    await storeMnemonic(mnemonic, password);
+    await storeNetwork(currentNetwork);
+    currentPassword = password;
     await loadWallet(mnemonic, currentNetwork);
-    showStatus("New wallet generated", "success");
+    showStatus("New wallet generated and encrypted", "success");
   } catch (err) {
     showStatus(`Generation failed: ${err}`, "error");
   }
@@ -173,10 +189,20 @@ async function onImport(): Promise<void> {
     showStatus("Invalid mnemonic phrase", "error");
     return;
   }
+
+  const { password, error } = getSetupPasswords();
+  if (error) {
+    showStatus(error, "error");
+    return;
+  }
+
   try {
+    await storeMnemonic(input, password);
+    await storeNetwork(currentNetwork);
+    currentPassword = password;
     await loadWallet(input, currentNetwork);
     ($("import-input") as HTMLTextAreaElement).value = "";
-    showStatus("Wallet imported", "success");
+    showStatus("Wallet imported and encrypted", "success");
   } catch (err) {
     showStatus(`Import failed: ${err}`, "error");
   }
@@ -216,7 +242,7 @@ async function onNetworkChange(): Promise<void> {
 
   if (currentMnemonic) {
     await deriveAndShow();
-    await saveState({ mnemonic: currentMnemonic, network: currentNetwork });
+    await storeNetwork(currentNetwork);
     showStatus(`Switched to ${currentNetwork}`, "info");
   }
 }
@@ -232,12 +258,20 @@ function onToggleMnemonic(): void {
   }
 }
 
+function onLock(): void {
+  currentMnemonic = null;
+  currentPassword = null;
+  showUnlockView();
+  showStatus("Wallet locked", "info");
+}
+
 async function onClear(): Promise<void> {
   if (!confirm("Clear wallet? This cannot be undone if you haven't backed up your mnemonic.")) {
     return;
   }
   currentMnemonic = null;
-  await clearState();
+  currentPassword = null;
+  await clearMnemonic();
   showNoWallet();
   showStatus("Wallet cleared", "info");
 }
@@ -248,17 +282,27 @@ async function onClear(): Promise<void> {
 
 async function init(): Promise<void> {
   // Bind events
+  $("btn-unlock").addEventListener("click", onUnlock);
   $("btn-generate").addEventListener("click", onGenerate);
   $("btn-import").addEventListener("click", onImport);
   $("btn-sync").addEventListener("click", onSync);
   $("btn-clear").addEventListener("click", onClear);
+  $("btn-lock").addEventListener("click", onLock);
   $("btn-toggle-mnemonic").addEventListener("click", onToggleMnemonic);
   $("network-select").addEventListener("change", onNetworkChange);
 
-  // Restore persisted state
-  const state = await loadState();
-  if (state) {
-    await loadWallet(state.mnemonic, state.network);
+  // Allow Enter key to submit on password fields
+  $("unlock-password").addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Enter") onUnlock();
+  });
+
+  // Determine initial view
+  const stored = await hasMnemonic();
+  if (stored) {
+    // Encrypted mnemonic exists — show unlock screen
+    currentNetwork = (await loadNetwork()) as Network;
+    ($("network-select") as HTMLSelectElement).value = currentNetwork;
+    showUnlockView();
   } else {
     showNoWallet();
   }

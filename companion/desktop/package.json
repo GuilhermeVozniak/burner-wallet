@@ -5,9 +5,15 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
-    "postbuild": "cp src/index.html dist/",
+    "postbuild": "cp src/index.html src/renderer.js dist/",
     "start": "tsc && electron .",
     "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^2.0.0",
+    "@scure/bip32": "^2.0.1",
+    "bip39": "^3.1.0"
   },
   "devDependencies": {
     "electron": "^33",

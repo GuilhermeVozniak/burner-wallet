@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import SessionGuard from "../components/SessionGuard";
 import { mnemonicToSeed, deriveAddress, fetchBalance } from "@/lib/crypto";
+import { clearSession } from "@/lib/session";
 import QrDisplay from "../components/QrDisplay";
 
 type Network = "testnet" | "mainnet" | "signet";
@@ -24,10 +26,7 @@ export default function WalletPage() {
     const mn = sessionStorage.getItem("bw_mnemonic");
     const src = sessionStorage.getItem("bw_source");
 
-    if (!mn) {
-      router.push("/");
-      return;
-    }
+    if (!mn) return;
 
     setNetwork(net || "testnet");
     setMnemonic(mn);
@@ -38,7 +37,7 @@ export default function WalletPage() {
       const addr = deriveAddress(seed, net || "testnet", 0, 0);
       setAddress(addr);
     });
-  }, [router]);
+  }, []);
 
   const handleSync = useCallback(async () => {
     if (!address) return;
@@ -55,9 +54,7 @@ export default function WalletPage() {
   }, [address, network]);
 
   function handleLogout() {
-    sessionStorage.removeItem("bw_network");
-    sessionStorage.removeItem("bw_mnemonic");
-    sessionStorage.removeItem("bw_source");
+    clearSession();
     router.push("/");
   }
 
@@ -68,7 +65,7 @@ export default function WalletPage() {
   const totalSats = balance ? balance.confirmed + balance.unconfirmed : null;
 
   return (
-    <>
+    <SessionGuard>
       <Header network={network} />
 
       <main>
@@ -158,6 +155,6 @@ export default function WalletPage() {
           </button>
         </div>
       </main>
-    </>
+    </SessionGuard>
   );
 }
