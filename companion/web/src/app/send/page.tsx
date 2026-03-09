@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
+import QrDisplay from "../components/QrDisplay";
 
 type Network = "testnet" | "mainnet" | "signet";
 type Step = "form" | "review";
@@ -54,10 +55,14 @@ export default function SendPage() {
     }
   }
 
-  const placeholderPsbt =
-    "70736274ff01" +
-    "...PSBT construction requires WASM bridge..." +
-    "000000";
+  // Build a simple payload for QR display (not a real PSBT yet,
+  // but structured so the signer can read it)
+  const txPayload = JSON.stringify({
+    to: recipient,
+    amount: parseInt(amount, 10) || 0,
+    fee_rate: parseFloat(feeRate) || 1,
+    network,
+  });
 
   return (
     <>
@@ -77,13 +82,7 @@ export default function SendPage() {
                 type="text"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
-                placeholder={
-                  network === "mainnet"
-                    ? "bc1q..."
-                    : network === "signet"
-                      ? "tb1q..."
-                      : "tb1q..."
-                }
+                placeholder={network === "mainnet" ? "bc1q..." : "tb1q..."}
               />
             </div>
 
@@ -142,25 +141,17 @@ export default function SendPage() {
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      Amount
-                    </td>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Amount</td>
                     <td style={{ padding: "0.4rem 0" }}>
                       {parseInt(amount, 10).toLocaleString()} sats
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      Fee Rate
-                    </td>
-                    <td style={{ padding: "0.4rem 0" }}>
-                      {feeRate} sat/vB
-                    </td>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Fee Rate</td>
+                    <td style={{ padding: "0.4rem 0" }}>{feeRate} sat/vB</td>
                   </tr>
                   <tr>
-                    <td style={{ color: "#777", padding: "0.4rem 0" }}>
-                      Network
-                    </td>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Network</td>
                     <td style={{ padding: "0.4rem 0" }}>{network}</td>
                   </tr>
                 </tbody>
@@ -168,21 +159,19 @@ export default function SendPage() {
             </div>
 
             <div className="card">
-              <h2>Unsigned PSBT</h2>
-              <p
-                style={{
-                  color: "#777",
-                  marginBottom: "0.75rem",
-                  fontSize: "0.85rem",
-                }}
-              >
-                Transfer this hex to your air-gapped signer for signing.
+              <h2>QR Code for Signer</h2>
+              <p style={{ color: "#777", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+                Scan this QR code with your air-gapped signer to sign the
+                transaction.
               </p>
-              <div className="hex-display">{placeholderPsbt}</div>
+              <QrDisplay
+                data={txPayload}
+                size={280}
+                label="Transaction payload for signer"
+              />
               <div className="note">
-                PSBT construction requires the WASM bridge to companion core.
-                This is a placeholder. Once integrated, a valid unsigned PSBT
-                will appear here.
+                Full PSBT construction requires UTXO data from Esplora.
+                This QR shows the transaction parameters for the signer.
               </div>
             </div>
 

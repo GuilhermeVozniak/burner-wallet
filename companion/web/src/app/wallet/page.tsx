@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
 import { mnemonicToSeed, deriveAddress, fetchBalance } from "@/lib/crypto";
+import QrDisplay from "../components/QrDisplay";
 
 type Network = "testnet" | "mainnet" | "signet";
 
@@ -99,7 +100,10 @@ export default function WalletPage() {
         <div className="card">
           <h2>Receive Address</h2>
           {address ? (
-            <div className="hex-display">{address}</div>
+            <>
+              <div className="hex-display">{address}</div>
+              <QrDisplay data={address} size={200} label="Scan to send bitcoin to this address" />
+            </>
           ) : (
             <p className="placeholder-value">Deriving...</p>
           )}

@@ -5,9 +5,57 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h1>Burner Wallet</h1>
-  <p>Network: testnet</p>
-  <p class="muted">WASM integration planned.</p>
-  <script type="module" src="popup.js"></script>
+  <header>
+    <h1>Burner Wallet</h1>
+    <div id="network-row">
+      <label for="network-select">Network</label>
+      <select id="network-select">
+        <option value="testnet" selected>Testnet</option>
+        <option value="signet">Signet</option>
+        <option value="mainnet">Mainnet</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- No wallet state -->
+  <section id="no-wallet">
+    <p class="muted">No wallet loaded.</p>
+    <button id="btn-generate">Generate Mnemonic</button>
+    <div id="import-section">
+      <textarea id="import-input" rows="3" placeholder="Enter 12 or 24 word mnemonic..."></textarea>
+      <button id="btn-import">Import Mnemonic</button>
+    </div>
+  </section>
+
+  <!-- Wallet loaded state -->
+  <section id="wallet-view" class="hidden">
+    <div id="mnemonic-box">
+      <div id="mnemonic-toggle-row">
+        <span class="label">Mnemonic</span>
+        <button id="btn-toggle-mnemonic" class="small-btn">Show</button>
+      </div>
+      <pre id="mnemonic-display" class="hidden"></pre>
+    </div>
+
+    <div id="address-box">
+      <span class="label">Address</span>
+      <code id="address-display"></code>
+    </div>
+
+    <div id="balance-box">
+      <div id="balance-row">
+        <span class="label">Balance</span>
+        <button id="btn-sync" class="small-btn">Sync</button>
+      </div>
+      <div id="balance-confirmed">-- sats</div>
+      <div id="balance-unconfirmed" class="muted">-- unconfirmed</div>
+    </div>
+
+    <button id="btn-clear" class="danger-btn">Clear Wallet</button>
+  </section>
+
+  <div id="status-bar" class="hidden"></div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
