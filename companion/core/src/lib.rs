@@ -1,8 +1,9 @@
 //! Burner Wallet companion core library.
 //!
 //! Provides Bitcoin functionality shared across all companion frontends:
-//! UTXO management, PSBT construction, fee estimation, and transaction
-//! broadcasting. Built on `rust-bitcoin` and BDK.
+//! mnemonic management, key derivation, address generation, UTXO management,
+//! PSBT construction, fee estimation, and transaction broadcasting.
+//! Built on `rust-bitcoin` and BDK.
 
 pub mod address;
 pub mod broadcast;
