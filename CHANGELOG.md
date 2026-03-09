@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mobile scaffold (Expo/React Native):** Placeholder app at `companion/mobile/` with type-check CI
 - **CI companion:** Enabled web, desktop, extension, mobile jobs in ci-companion workflow
 - **Makefile:** Added build/lint/clean targets for all 4 companion platforms
+- **WASM bridge (companion core-wasm):** wasm-bindgen crate exposing BIP39/BIP84/PSBT crypto for web and extension (13 tests with cross-impl address vectors)
+- **Napi-rs bridge (companion core-napi):** Native Node.js module wrapping companion core for Electron desktop, including blocking Esplora sync
+- **Web wallet UI:** Full Next.js wallet with real BIP39 mnemonic generation/validation, BIP84 address derivation, Esplora balance sync, transaction broadcasting, QR code display for addresses and transactions, webcam QR scanning for signed PSBTs
+- **Extension wallet UI:** Chrome extension popup with mnemonic gen/import, address derivation, balance sync, chrome.storage.local persistence
+- **Desktop wallet UI:** Electron app with inline crypto (BIP39/BIP32/BIP84), RIPEMD-160, bech32, Esplora balance sync
+- **Mobile wallet UI:** Expo/React Native app with multi-screen wallet (home, import, dashboard), crypto via react-native-get-random-values
 
 ## [0.1.0-m1c] - 2026-03-04
 

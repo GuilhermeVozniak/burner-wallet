@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Burner Wallet is an air-gapped Bitcoin cold-storage wallet. An old Nokia C1-01 feature phone (Java ME) acts as the offline signer — it never touches the internet. A multi-platform companion ecosystem handles chain access, PSBT construction, and broadcasting. Data crosses the air gap via QR codes (primary), with Bluetooth OBEX, MicroSD, and manual text entry as fallbacks.
 
-**Current milestone:** M3 in progress. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests). M1c delivered PSBT parsing/signing, QR encode/decode/camera, and companion TUI (212 signer tests, 47 companion tests). M2 delivered TUI testing (30 tests), CI enablement, transaction history, camera QR pipeline, ImageProcessor, and Checkstyle (224 signer tests, 48 companion core tests, 30 TUI tests). M3 adds multi-platform companion scaffolds: Electron desktop, Next.js web, Chrome extension, React Native mobile — all with CI.
+**Current milestone:** M3 complete, M4 next. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests). M1c delivered PSBT parsing/signing, QR encode/decode/camera, and companion TUI (212 signer tests, 47 companion tests). M2 delivered TUI testing (30 tests), CI enablement, transaction history, camera QR pipeline, ImageProcessor, and Checkstyle (224 signer tests, 48 companion core tests, 30 TUI tests). M3 delivered multi-platform companions with real crypto: WASM bridge (13 tests), napi-rs bridge, web (Next.js + QR display/scan + Esplora), desktop (Electron), extension (Chrome), mobile (Expo). 315 total tests.
 
 ## Architecture
 
@@ -14,11 +14,13 @@ Burner Wallet is an air-gapped Bitcoin cold-storage wallet. An old Nokia C1-01 f
 signer/              Java ME MIDlet (Nokia C1-01, CLDC 1.1 / MIDP 2.0)
 companion/
   core/              Rust library — BIP39/32/44/84/173 crypto, rust-bitcoin + BDK
+  core-wasm/         WASM bridge (wasm-bindgen) — crypto subset for web + extension
+  core-napi/         Napi-rs bridge — full companion core for Electron desktop
   tui/               Rust TUI binary (ratatui) — depends on core via path
-  desktop/           Electron (placeholder)
-  web/               Next.js (placeholder)
-  extension/         Chrome Extension (placeholder)
-  mobile/            React Native (placeholder)
+  desktop/           Electron app — wallet UI with inline crypto
+  web/               Next.js app — wallet UI with JS crypto, QR display/scan, Esplora
+  extension/         Chrome Extension — popup wallet with BIP39/84, chrome.storage
+  mobile/            Expo/React Native — wallet UI with multi-screen navigation
 protocol/
   schemas/           QR payload encoding schemas (planned)
   vectors/           BIP32/39/173 test vectors (JSON)
@@ -37,6 +39,12 @@ The **signer** is an extremely constrained Java ME environment (Java 1.4 source 
 The **companion core** (`companion/core/`) is the Rust crypto + wallet library. Modules: `mnemonic.rs` (BIP39), `keys.rs` (BIP32), `derivation.rs` (BIP44/84), `address.rs` (BIP84+BIP173 bech32), `network.rs`, `error.rs`, `wallet.rs` (BDK wallet management), `psbt.rs` (PSBT construction/merge/finalize), `broadcast.rs` (Esplora broadcasting).
 
 The **companion TUI** (`companion/tui/`) is a full ratatui terminal UI with wallet status, send flow (PSBT construction), receive signed PSBT, and transaction broadcasting.
+
+The **companion WASM bridge** (`companion/core-wasm/`) exposes the crypto-only subset via wasm-bindgen: mnemonic gen/validate, seed derivation, BIP84 address derivation, PSBT base64/hex conversion. Does NOT include BDK/Esplora (networking stays in JS).
+
+The **companion napi-rs bridge** (`companion/core-napi/`) wraps the full companion core for Electron via napi-rs, including blocking Esplora wallet sync.
+
+The **companion web** (`companion/web/`) is a Next.js 15 app with real BIP39/BIP84 crypto (bip39 + @scure/bip32 + @noble/hashes), QR code display (qrcode), webcam QR scanning (html5-qrcode), and Esplora API integration for balance sync and broadcasting.
 
 Both signer and companion produce **identical addresses and signatures** for the same seed — verified via `protocol/vectors/cross-impl-wallet.json` and `protocol/vectors/psbt-signing.json`.
 
