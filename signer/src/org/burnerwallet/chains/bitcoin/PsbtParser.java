@@ -100,8 +100,8 @@ public class PsbtParser {
 
             // Read key length
             long[] csResult = CompactSize.read(data, offset);
-            long keyLen = csResult[0];
-            offset += (int) csResult[1];
+            int keyLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
             // Separator byte (keyLen == 0) terminates the map
             if (keyLen == 0) {
@@ -109,29 +109,29 @@ public class PsbtParser {
                 return;
             }
 
-            checkBounds(data, offset, (int) keyLen);
+            checkBounds(data, offset, keyLen);
 
             // Key type is the first byte of the key
             int keyType = data[offset] & 0xFF;
             // Key data follows the type byte (keyLen - 1 bytes)
-            int keyDataLen = (int) keyLen - 1;
+            int keyDataLen = keyLen - 1;
             int keyDataStart = offset + 1;
-            offset += (int) keyLen;
+            offset += keyLen;
 
             // Read value length
             checkBounds(data, offset, 1);
             csResult = CompactSize.read(data, offset);
-            long valueLen = csResult[0];
-            offset += (int) csResult[1];
+            int valueLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
-            checkBounds(data, offset, (int) valueLen);
+            checkBounds(data, offset, valueLen);
             int valueStart = offset;
-            offset += (int) valueLen;
+            offset += valueLen;
 
             // Process known key types
             if (keyType == GLOBAL_UNSIGNED_TX) {
                 psbt.unsignedTxBytes = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + (int) valueLen);
+                    data, valueStart, valueStart + valueLen);
                 psbt.unsignedTx = TxSerializer.parse(psbt.unsignedTxBytes);
             }
             // Unknown key types are silently skipped
@@ -151,8 +151,8 @@ public class PsbtParser {
 
             // Read key length
             long[] csResult = CompactSize.read(data, offset);
-            long keyLen = csResult[0];
-            offset += (int) csResult[1];
+            int keyLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
             // Separator
             if (keyLen == 0) {
@@ -160,29 +160,29 @@ public class PsbtParser {
                 return;
             }
 
-            checkBounds(data, offset, (int) keyLen);
+            checkBounds(data, offset, keyLen);
 
             int keyType = data[offset] & 0xFF;
-            int keyDataLen = (int) keyLen - 1;
+            int keyDataLen = keyLen - 1;
             int keyDataStart = offset + 1;
-            offset += (int) keyLen;
+            offset += keyLen;
 
             // Read value length
             checkBounds(data, offset, 1);
             csResult = CompactSize.read(data, offset);
-            long valueLen = csResult[0];
-            offset += (int) csResult[1];
+            int valueLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
-            checkBounds(data, offset, (int) valueLen);
+            checkBounds(data, offset, valueLen);
             int valueStart = offset;
-            offset += (int) valueLen;
+            offset += valueLen;
 
             // Process known input key types
             if (keyType == INPUT_NON_WITNESS_UTXO) {
                 input.nonWitnessUtxo = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + (int) valueLen);
+                    data, valueStart, valueStart + valueLen);
             } else if (keyType == INPUT_WITNESS_UTXO) {
-                parseWitnessUtxo(data, valueStart, (int) valueLen, input);
+                parseWitnessUtxo(data, valueStart, valueLen, input);
             } else if (keyType == INPUT_PARTIAL_SIG) {
                 // Key data = pubkey
                 if (keyDataLen > 0) {
@@ -190,7 +190,7 @@ public class PsbtParser {
                         data, keyDataStart, keyDataStart + keyDataLen);
                 }
                 input.partialSigValue = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + (int) valueLen);
+                    data, valueStart, valueStart + valueLen);
             } else if (keyType == INPUT_SIGHASH_TYPE) {
                 if (valueLen >= 4) {
                     input.sighashType = TxSerializer.readInt32LE(data, valueStart);
@@ -202,7 +202,7 @@ public class PsbtParser {
                         data, keyDataStart, keyDataStart + keyDataLen);
                 }
                 input.bip32Derivation = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + (int) valueLen);
+                    data, valueStart, valueStart + valueLen);
             }
             // Unknown key types are silently skipped
 
@@ -230,8 +230,8 @@ public class PsbtParser {
 
         // ScriptPubKey length (CompactSize)
         long[] csResult = CompactSize.read(data, off);
-        int scriptLen = (int) csResult[0];
-        off += (int) csResult[1];
+        int scriptLen = safeIntCast(csResult[0]);
+        off += safeIntCast(csResult[1]);
 
         // ScriptPubKey
         input.witnessUtxoScript = ByteArrayUtils.copyOfRange(
@@ -249,8 +249,8 @@ public class PsbtParser {
 
             // Read key length
             long[] csResult = CompactSize.read(data, offset);
-            long keyLen = csResult[0];
-            offset += (int) csResult[1];
+            int keyLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
             // Separator
             if (keyLen == 0) {
@@ -258,22 +258,22 @@ public class PsbtParser {
                 return;
             }
 
-            checkBounds(data, offset, (int) keyLen);
+            checkBounds(data, offset, keyLen);
 
             int keyType = data[offset] & 0xFF;
-            int keyDataLen = (int) keyLen - 1;
+            int keyDataLen = keyLen - 1;
             int keyDataStart = offset + 1;
-            offset += (int) keyLen;
+            offset += keyLen;
 
             // Read value length
             checkBounds(data, offset, 1);
             csResult = CompactSize.read(data, offset);
-            long valueLen = csResult[0];
-            offset += (int) csResult[1];
+            int valueLen = safeIntCast(csResult[0]);
+            offset += safeIntCast(csResult[1]);
 
-            checkBounds(data, offset, (int) valueLen);
+            checkBounds(data, offset, valueLen);
             int valueStart = offset;
-            offset += (int) valueLen;
+            offset += valueLen;
 
             // Process known output key types
             if (keyType == OUTPUT_BIP32_DERIVATION) {
@@ -283,12 +283,27 @@ public class PsbtParser {
                         data, keyDataStart, keyDataStart + keyDataLen);
                 }
                 output.bip32Derivation = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + (int) valueLen);
+                    data, valueStart, valueStart + valueLen);
             }
             // Unknown key types are silently skipped
 
             offsetHolder[0] = offset;
         }
+    }
+
+    /**
+     * Safely cast a long CompactSize value to int, rejecting overflow.
+     *
+     * @param value the long value from CompactSize.read()
+     * @return the value as int
+     * @throws CryptoError if value is negative or exceeds Integer.MAX_VALUE
+     */
+    private static int safeIntCast(long value) throws CryptoError {
+        if (value < 0 || value > Integer.MAX_VALUE) {
+            throw new CryptoError(CryptoError.ERR_PSBT,
+                "Value too large: " + value);
+        }
+        return (int) value;
     }
 
     /**

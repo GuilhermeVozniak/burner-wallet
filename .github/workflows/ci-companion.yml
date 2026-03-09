@@ -52,6 +52,10 @@ jobs:
         working-directory: companion/tui
         run: cargo test
 
+      - name: Test WASM bridge (native)
+        working-directory: companion/core-wasm
+        run: cargo test
+
   web:
     name: Web (Next.js)
     runs-on: ubuntu-latest

@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
   },
   networkBtnActive: {
     borderColor: "#0ff",
-    backgroundColor: "#0ff22",
+    backgroundColor: "rgba(0, 255, 255, 0.13)",
   },
   networkBtnText: {
     color: "#888",

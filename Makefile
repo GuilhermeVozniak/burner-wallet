@@ -13,7 +13,7 @@ WEB_DIR      := companion/web
 DESKTOP_DIR  := companion/desktop
 EXT_DIR      := companion/extension
 MOBILE_DIR   := companion/mobile
-SIGNER_JAVA  := /Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home
+SIGNER_JAVA  ?= /Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

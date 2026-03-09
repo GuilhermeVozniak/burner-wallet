@@ -35,12 +35,19 @@ jobs:
         working-directory: signer
         run: ant test
 
-      - name: Download ProGuard
+      - name: Download and verify ProGuard
         run: |
           curl -L -o /tmp/proguard-7.8.2.zip \
             https://github.com/Guardsquare/proguard/releases/download/v7.8.2/proguard-7.8.2.zip
+          echo "Verifying ProGuard download integrity..."
+          EXPECTED_SIZE=$(stat -c%s /tmp/proguard-7.8.2.zip 2>/dev/null || stat -f%z /tmp/proguard-7.8.2.zip)
+          if [ "$EXPECTED_SIZE" -lt 1000000 ]; then
+            echo "ERROR: ProGuard zip is suspiciously small ($EXPECTED_SIZE bytes)"
+            exit 1
+          fi
           unzip -o /tmp/proguard-7.8.2.zip -d tools/
           ln -sf proguard-7.8.2 tools/proguard
+          ls -la tools/proguard/lib/proguard-ant.jar
 
       - name: Build
         working-directory: signer

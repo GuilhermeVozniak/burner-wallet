@@ -63,10 +63,10 @@ make companion-tui       # cargo build in companion/tui
 make test
 
 # Run specific test suites
-cd companion/core && cargo test                    # 47 tests
+cd companion/core && cargo test                    # 48 tests
 cd companion/core && cargo test <test_name>        # single test
 cd companion/tui && cargo test
-cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 212 tests
+cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 224 tests
 
 # Lint
 cd companion/core && cargo clippy -- -D warnings   # CI enforces -D warnings

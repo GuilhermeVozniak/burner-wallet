@@ -48,6 +48,15 @@ export default function SendPage() {
       setError("Recipient address is required.");
       return;
     }
+    // Validate bech32 address format
+    const addr = recipient.trim();
+    const validPrefixes = network === "mainnet" ? ["bc1q", "bc1p"] : ["tb1q", "tb1p"];
+    if (!validPrefixes.some((p) => addr.toLowerCase().startsWith(p))) {
+      setError(
+        `Invalid address for ${network}. Expected ${validPrefixes.join(" or ")} prefix.`
+      );
+      return;
+    }
     const sats = parseInt(amount, 10);
     if (isNaN(sats) || sats <= 0) {
       setError("Amount must be a positive number of satoshis.");
