@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  signer:
+    name: Build Signer MIDlet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: "8"
+          distribution: "temurin"
+
+      - name: Install Apache Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      - name: Verify dependency hashes
+        working-directory: signer
+        run: ant verify-deps
+
+      - name: Run tests
+        working-directory: signer
+        run: ant test
+
+      - name: Download ProGuard
+        run: |
+          curl -L -o /tmp/proguard-7.8.2.zip \
+            https://github.com/Guardsquare/proguard/releases/download/v7.8.2/proguard-7.8.2.zip
+          unzip -o /tmp/proguard-7.8.2.zip -d tools/
+          ln -sf proguard-7.8.2 tools/proguard
+
+      - name: Build MIDlet
+        working-directory: signer
+        run: ant clean build
+
+      - name: Size check
+        working-directory: signer
+        run: ant size-check
+
+      - name: Generate JAR checksum
+        working-directory: signer/dist
+        run: sha256sum BurnerWallet.jar > BurnerWallet.jar.sha256
+
+      - name: Upload signer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signer
+          path: |
+            signer/dist/BurnerWallet.jar
+            signer/dist/BurnerWallet.jad
+            signer/dist/BurnerWallet.jar.sha256
+
+  companion-tui:
+    name: Build Companion TUI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: burner-companion-linux-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: burner-companion-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: burner-companion-windows-amd64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        working-directory: companion/tui
+        run: cargo test
+
+      - name: Build release
+        working-directory: companion/tui
+        run: cargo build --release
+
+      - name: Rename binary (unix)
+        if: runner.os != 'Windows'
+        run: cp companion/tui/target/release/burner-companion ${{ matrix.artifact }}
+
+      - name: Rename binary (windows)
+        if: runner.os == 'Windows'
+        run: cp companion/tui/target/release/burner-companion.exe ${{ matrix.artifact }}
+
+      - name: Upload TUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  companion-web:
+    name: Build Companion Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: companion/web/pnpm-lock.yaml
+
+      - name: Install and build
+        working-directory: companion/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Package web build
+        run: tar -czf burner-companion-web.tar.gz -C companion/web/.next/static . || tar -czf burner-companion-web.tar.gz -C companion/web/out .
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-web
+          path: burner-companion-web.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: [signer, companion-tui, companion-web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          # Signer
+          cp release-artifacts/signer/signer/dist/BurnerWallet.jar release/
+          cp release-artifacts/signer/signer/dist/BurnerWallet.jad release/
+          cp release-artifacts/signer/signer/dist/BurnerWallet.jar.sha256 release/
+          # TUI binaries
+          cp release-artifacts/burner-companion-linux-amd64/burner-companion-linux-amd64 release/
+          cp release-artifacts/burner-companion-macos-arm64/burner-companion-macos-arm64 release/
+          cp release-artifacts/burner-companion-windows-amd64.exe/burner-companion-windows-amd64.exe release/
+          # Web
+          cp release-artifacts/companion-web/burner-companion-web.tar.gz release/
+          # Generate checksums
+          cd release
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

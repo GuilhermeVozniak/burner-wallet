@@ -78,10 +78,8 @@ tools/proguard
 tools/freej2me-plus/
 tools/cratedocs-mcp/
 
-# === Signer libs (downloaded, not tracked — use make setup-tools) ===
-signer/lib/bcprov-jdk14.jar
-signer/lib/junit-4.13.2.jar
-signer/lib/hamcrest-core-1.3.jar
+# === Signer libs — tracked in git for CI reproducibility ===
+# All JARs in signer/lib/ are whitelisted above (!signer/lib/*.jar)
 
 # === Claude Code ===
 .claude/settings.local.json
