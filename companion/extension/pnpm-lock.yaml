@@ -21,6 +21,9 @@ importers:
         specifier: ^3.1.0
         version: 3.1.0
     devDependencies:
+      chrome-types:
+        specifier: ^0.1.422
+        version: 0.1.422
       esbuild:
         specifier: ^0.25
         version: 0.25.12
@@ -207,6 +210,9 @@ packages:
   bip39@3.1.0:
     resolution: {integrity: sha512-c9kiwdk45Do5GL0vJMe7tS95VjCii65mYAH7DfWl3uW8AVzXKQVUm64i3hzVybBDMp9r7j9iNxR85+ul8MdN/A==}
 
+  chrome-types@0.1.422:
+    resolution: {integrity: sha512-MgPDW7KFMTLUIHJtwybUcF7AoYenjPEGqJidFYojJuNSSM0kjuO293w+79t1VLkI1RcNS/2yCJLDglCW6X8tTQ==}
+
   esbuild@0.25.12:
     resolution: {integrity: sha512-bbPBYYrtZbkt6Os6FiTLCTFxvq4tt3JKall1vRwshA3fdVztsLAatFaZobhkBC8/BrPetoa0oksYoKXoG4ryJg==}
     engines: {node: '>=18'}
@@ -316,6 +322,8 @@ snapshots:
   bip39@3.1.0:
     dependencies:
       '@noble/hashes': 1.8.0
+
+  chrome-types@0.1.422: {}
 
   esbuild@0.25.12:
     optionalDependencies:
