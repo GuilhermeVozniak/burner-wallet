@@ -75,9 +75,10 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: burner-companion-macos-apple-silicon
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             artifact: burner-companion-macos-intel
+            cross: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: burner-companion-windows-amd64.exe
@@ -86,22 +87,25 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Run tests
+        if: matrix.cross != true
         working-directory: companion/tui
         run: cargo test
 
       - name: Build release
         working-directory: companion/tui
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary (unix)
         if: runner.os != 'Windows'
-        run: cp companion/tui/target/release/burner-companion ${{ matrix.artifact }}
+        run: cp companion/tui/target/${{ matrix.target }}/release/burner-companion ${{ matrix.artifact }}
 
       - name: Rename binary (windows)
         if: runner.os == 'Windows'
-        run: cp companion/tui/target/release/burner-companion.exe ${{ matrix.artifact }}
+        run: cp companion/tui/target/${{ matrix.target }}/release/burner-companion.exe ${{ matrix.artifact }}
 
       - name: Upload TUI artifact
         uses: actions/upload-artifact@v4
