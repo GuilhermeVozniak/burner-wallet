@@ -69,9 +69,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: burner-companion-linux-amd64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: burner-companion-linux-arm64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: burner-companion-macos-arm64
+            artifact: burner-companion-macos-apple-silicon
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: burner-companion-macos-intel
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: burner-companion-windows-amd64.exe
@@ -158,7 +164,9 @@ jobs:
           find release-artifacts/signer -name "BurnerWallet.jar.sha256" -exec cp {} release/ \;
           # TUI binaries
           find release-artifacts -name "burner-companion-linux-amd64" -exec cp {} release/ \;
-          find release-artifacts -name "burner-companion-macos-arm64" -exec cp {} release/ \;
+          find release-artifacts -name "burner-companion-linux-arm64" -exec cp {} release/ \;
+          find release-artifacts -name "burner-companion-macos-apple-silicon" -exec cp {} release/ \;
+          find release-artifacts -name "burner-companion-macos-intel" -exec cp {} release/ \;
           find release-artifacts -name "burner-companion-windows-amd64.exe" -exec cp {} release/ \;
           # Web
           find release-artifacts -name "burner-companion-web.tar.gz" -exec cp {} release/ \;
