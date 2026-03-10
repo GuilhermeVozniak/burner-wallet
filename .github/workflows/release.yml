@@ -149,19 +149,24 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
+          echo "=== Downloaded artifacts ==="
+          find release-artifacts -type f
+          echo "=== Copying to release/ ==="
           # Signer
-          cp release-artifacts/signer/signer/dist/BurnerWallet.jar release/
-          cp release-artifacts/signer/signer/dist/BurnerWallet.jad release/
-          cp release-artifacts/signer/signer/dist/BurnerWallet.jar.sha256 release/
+          find release-artifacts/signer -name "BurnerWallet.jar" -exec cp {} release/ \;
+          find release-artifacts/signer -name "BurnerWallet.jad" -exec cp {} release/ \;
+          find release-artifacts/signer -name "BurnerWallet.jar.sha256" -exec cp {} release/ \;
           # TUI binaries
-          cp release-artifacts/burner-companion-linux-amd64/burner-companion-linux-amd64 release/
-          cp release-artifacts/burner-companion-macos-arm64/burner-companion-macos-arm64 release/
-          cp release-artifacts/burner-companion-windows-amd64.exe/burner-companion-windows-amd64.exe release/
+          find release-artifacts -name "burner-companion-linux-amd64" -exec cp {} release/ \;
+          find release-artifacts -name "burner-companion-macos-arm64" -exec cp {} release/ \;
+          find release-artifacts -name "burner-companion-windows-amd64.exe" -exec cp {} release/ \;
           # Web
-          cp release-artifacts/companion-web/burner-companion-web.tar.gz release/
+          find release-artifacts -name "burner-companion-web.tar.gz" -exec cp {} release/ \;
           # Generate checksums
           cd release
+          ls -la
           sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
