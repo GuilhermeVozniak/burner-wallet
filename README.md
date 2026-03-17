@@ -17,10 +17,11 @@ A security-first, offline-signing Bitcoin wallet built for Java ME (Series 40) d
 - [Problem](#problem)
 - [How It Works](#how-it-works)
 - [Key Features](#key-features)
+- [Installation (Pre-built Releases)](#installation-pre-built-releases)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
+- [Getting Started (Build from Source)](#getting-started-build-from-source)
 - [Development Workflow](#development-workflow)
 - [Testing](#testing)
 - [CI/CD](#cicd)
@@ -88,6 +89,147 @@ Burner Wallet turns a Nokia C1-01 (or compatible Series 40 device) into a dedica
 - **Multiple transport options** — QR (primary), Bluetooth OBEX, MicroSD, manual entry as fallbacks
 - **Multi-platform companion** — TUI, desktop (Electron), web (Next.js), Chrome extension, mobile (React Native)
 - **Deterministic builds** — Reproducible JAR output for independent verification
+
+## Installation (Pre-built Releases)
+
+If you want to use Burner Wallet without compiling anything, download the pre-built binaries from the [GitHub Releases](https://github.com/GuilhermeVozniak/burner-wallet/releases) page.
+
+### 1. Download
+
+Go to the [latest release](https://github.com/GuilhermeVozniak/burner-wallet/releases/latest) and download the files you need:
+
+**Signer (Nokia phone):**
+
+| File | Description |
+|------|-------------|
+| `BurnerWallet.jar` | MIDlet application for the Nokia phone |
+| `BurnerWallet.jad` | MIDlet descriptor (required for installation) |
+
+**Companion (your computer/phone):**
+
+| File | Platform |
+|------|----------|
+| `burner-companion-macos-apple-silicon` | macOS (Apple Silicon — M1/M2/M3/M4) |
+| `burner-companion-macos-intel` | macOS (Intel) |
+| `burner-companion-linux-amd64` | Linux (x86_64) |
+| `burner-companion-linux-arm64` | Linux (ARM64 / Raspberry Pi) |
+| `burner-companion-windows-amd64.exe` | Windows (x86_64) |
+| `burner-companion-web.tar.gz` | Self-hostable web companion |
+
+**Verification:**
+
+| File | Description |
+|------|-------------|
+| `SHA256SUMS.txt` | SHA-256 checksums for all artifacts |
+
+### 2. Verify Downloads
+
+Always verify the integrity of downloaded files:
+
+```bash
+# Download the checksums file alongside your artifacts, then verify:
+sha256sum -c SHA256SUMS.txt
+
+# Or verify a single file:
+sha256sum BurnerWallet.jar
+# Compare the output with the hash in SHA256SUMS.txt
+```
+
+On macOS, use `shasum -a 256` instead of `sha256sum`.
+
+### 3. Install the Signer on a Nokia Phone
+
+Transfer both `BurnerWallet.jar` and `BurnerWallet.jad` to your Nokia C1-01 (or compatible Series 40 device) using one of these methods:
+
+**Via Bluetooth:**
+1. Enable Bluetooth on both your computer and the Nokia phone
+2. Pair the devices
+3. Send `BurnerWallet.jar` via Bluetooth file transfer (OBEX push)
+4. The phone will prompt you to install — accept
+
+**Via USB cable:**
+1. Connect the Nokia to your computer with a USB data cable
+2. The phone should appear as a mass storage device
+3. Copy `BurnerWallet.jar` and `BurnerWallet.jad` to the phone's storage
+4. On the phone, navigate to the file using the file manager and select it to install
+
+**Via MicroSD card:**
+1. Insert the MicroSD card into your computer (with an adapter if needed)
+2. Copy `BurnerWallet.jar` and `BurnerWallet.jad` to the card
+3. Insert the card into the Nokia phone
+4. Navigate to the file on the card using the file manager and select it to install
+
+Once installed, the MIDlet appears in the phone's application menu. Launch it and follow the on-screen setup:
+1. **Set a PIN** — protects wallet access on the device
+2. **Generate or import a mnemonic** — creates your BIP39 seed phrase (write it down!)
+3. **Wallet home** — view your receive address, sign transactions via QR
+
+> **Important:** After setup, your Nokia becomes your air-gapped signer. It should never connect to the internet. The phone's lack of Wi-Fi enforces this naturally.
+
+### 4. Install the Companion on Your Computer
+
+**macOS (Apple Silicon — M1/M2/M3/M4):**
+
+```bash
+# Make the binary executable
+chmod +x burner-companion-macos-apple-silicon
+
+# Remove quarantine attribute (macOS will block unsigned binaries otherwise)
+xattr -d com.apple.quarantine burner-companion-macos-apple-silicon
+
+# Run
+./burner-companion-macos-apple-silicon
+```
+
+**macOS (Intel):**
+
+```bash
+chmod +x burner-companion-macos-intel
+xattr -d com.apple.quarantine burner-companion-macos-intel
+./burner-companion-macos-intel
+```
+
+**Linux:**
+
+```bash
+chmod +x burner-companion-linux-amd64   # or linux-arm64
+./burner-companion-linux-amd64
+```
+
+**Windows:**
+
+Double-click `burner-companion-windows-amd64.exe`, or run from a terminal:
+
+```powershell
+.\burner-companion-windows-amd64.exe
+```
+
+**Web (self-hosted):**
+
+```bash
+tar -xzf burner-companion-web.tar.gz -C ./companion-web
+# Serve with any static file server, e.g.:
+npx serve ./companion-web
+```
+
+### 5. Using the Air-Gapped Workflow
+
+Once both signer and companion are running:
+
+1. **Companion:** Create a transaction (enter recipient address, amount) — the companion constructs an unsigned PSBT and displays it as a QR code
+2. **Signer (Nokia):** Use the phone's camera to scan the QR code from the companion screen
+3. **Signer (Nokia):** Review the transaction details on the phone screen, then approve to sign
+4. **Signer (Nokia):** The phone displays the signed PSBT as a QR code on its screen
+5. **Companion:** Scan the signed QR code from the phone screen (using webcam or device camera)
+6. **Companion:** Broadcast the signed transaction to the Bitcoin network
+
+The signer never touches the internet. All data crosses the air gap via QR codes only.
+
+### 6. Run the Signer in an Emulator (No Nokia Phone Required)
+
+If you don't have a Nokia phone, you can test the signer in the FreeJ2ME-Plus emulator on your computer. This requires building from source — see [Getting Started (Build from Source)](#getting-started-build-from-source).
+
+---
 
 ## Architecture
 
@@ -219,13 +361,22 @@ All companion apps share a common Rust core library (`companion/core`) built on 
   - **Mobile:** Xcode (iOS) / Android Studio (Android)
   - **Extension:** Chrome browser for testing
 
-## Getting Started
+## Getting Started (Build from Source)
+
+> If you just want to use Burner Wallet without compiling, see [Installation (Pre-built Releases)](#installation-pre-built-releases) above.
 
 ### Clone the Repository
 
 ```bash
 git clone https://github.com/GuilhermeVozniak/burner-wallet.git
 cd burner-wallet
+```
+
+### Set Up Development Tools
+
+```bash
+# Downloads ProGuard, Checkstyle, and builds the FreeJ2ME-Plus J2ME emulator
+make setup-tools
 ```
 
 ### Build the Signer (MIDlet)
@@ -243,6 +394,17 @@ ant clean build
 # Run in emulator
 ant emulator
 ```
+
+### Run the Signer in the Emulator
+
+If you don't have a Nokia phone, run the signer in the FreeJ2ME-Plus emulator:
+
+```bash
+# From the repository root (requires make setup-tools + make signer)
+make emulator
+```
+
+This opens a graphical window emulating a Nokia C1-01. Use your keyboard to interact with the phone's keypad.
 
 ### Build the Companion (TUI)
 
@@ -577,6 +739,12 @@ A: The architecture is being designed with multi-chain extensibility from day on
 
 **Q: How do I get a Nokia C1-01?**
 A: Used units are widely available on eBay, local classifieds, and electronics recyclers for a few dollars. Ensure the device is unlocked and functional.
+
+**Q: Do I need to compile the code myself?**
+A: No. Pre-built binaries for the signer (JAR) and companion (macOS, Linux, Windows) are available on the [GitHub Releases](https://github.com/GuilhermeVozniak/burner-wallet/releases) page. See [Installation (Pre-built Releases)](#installation-pre-built-releases) for step-by-step instructions. Building from source is only needed for development or if you want to verify the build yourself.
+
+**Q: Can I test without a Nokia phone?**
+A: Yes. Build from source and run `make emulator` to launch the signer in the FreeJ2ME-Plus J2ME emulator on your computer. See [Getting Started (Build from Source)](#getting-started-build-from-source).
 
 ---
 
