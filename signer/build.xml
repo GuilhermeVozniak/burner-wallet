@@ -88,6 +88,14 @@ Available targets:
         <jar destfile="${build.dir}/${midlet.name}-unprocessed.jar"
              basedir="${classes.dir}">
             <fileset dir="${res.dir}" erroronmissingdir="false"/>
+            <manifest>
+                <attribute name="MIDlet-Name" value="${midlet.name}"/>
+                <attribute name="MIDlet-Version" value="${midlet.version}"/>
+                <attribute name="MIDlet-Vendor" value="${midlet.vendor}"/>
+                <attribute name="MIDlet-1" value="${midlet.name}, , ${midlet.class}"/>
+                <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
+                <attribute name="MicroEdition-Configuration" value="CLDC-1.1"/>
+            </manifest>
         </jar>
     </target>
 
