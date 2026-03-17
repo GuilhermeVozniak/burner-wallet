@@ -580,6 +580,30 @@ The following **must pass** before any release:
 | `ci-companion` | PR, push to `main` | Linux + macOS + Windows | Rust: clippy + test → WASM build → Web: lint + test → Desktop: build → Mobile: build |
 | `release` | Git tag `v*` | Linux + macOS + Windows | Full build all targets → Sign artifacts → GitHub Release → Checksums |
 
+### Creating a Release
+
+Releases are built automatically by GitHub Actions when a version tag is pushed via git.
+
+```bash
+# 1. Ensure you're on main with all changes merged
+git checkout main && git pull origin main
+
+# 2. Create and push the tag
+git tag v0.x.y
+git push origin v0.x.y
+```
+
+The workflow builds the signer JAR, all companion TUI binaries, and the web bundle, then creates a **draft release** with all artifacts attached.
+
+```bash
+# 3. Publish the draft release
+gh release edit v0.x.y --draft=false --latest
+```
+
+Or go to **Releases** on GitHub, find the draft, click **Edit**, then **Publish release**.
+
+> **Important:** Do not create releases or tags through the GitHub web UI — the release workflow may not trigger. Always push tags via `git push`. If a tag push fails to trigger the workflow, you can run it manually from **Actions > Release > Run workflow** (requires the `workflow_dispatch` trigger).
+
 ### Release Artifacts
 
 Each release publishes:
