@@ -2,17 +2,17 @@ package org.burnerwallet.chains.bitcoin;
 
 import java.math.BigInteger;
 
-import org.bouncycastle.asn1.sec.SECNamedCurves;
-import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
+import org.bouncycastle.math.ec.ECCurve;
 import org.bouncycastle.math.ec.ECPoint;
 
 import org.burnerwallet.core.CryptoError;
+import org.burnerwallet.core.HexCodec;
 
 /**
  * Secp256k1 elliptic curve operations using Bouncy Castle.
@@ -22,21 +22,40 @@ import org.burnerwallet.core.CryptoError;
  * signature verification, and DER encoding for Bitcoin.
  * All public keys are returned in compressed format (33 bytes).
  *
+ * Curve parameters are hardcoded to avoid the SECNamedCurves
+ * registry which depends on ASN1ObjectIdentifier -> java.util.Map
+ * (not available in CLDC 1.1).
+ *
  * Java 1.4 compatible (CLDC 1.1).
  */
 public final class Secp256k1 {
 
-    private static final X9ECParameters CURVE;
+    private static final ECCurve CURVE;
     private static final ECDomainParameters DOMAIN;
 
     static {
-        CURVE = SECNamedCurves.getByName("secp256k1");
-        DOMAIN = new ECDomainParameters(
-            CURVE.getCurve(),
-            CURVE.getG(),
-            CURVE.getN(),
-            CURVE.getH()
-        );
+        // secp256k1 curve parameters (SEC 2, section 2.7.1)
+        try {
+            BigInteger p = new BigInteger(1, HexCodec.decode(
+                "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F"));
+            BigInteger a = BigInteger.valueOf(0);
+            BigInteger b = BigInteger.valueOf(7);
+            BigInteger n = new BigInteger(1, HexCodec.decode(
+                "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"));
+            BigInteger h = BigInteger.valueOf(1);
+
+            CURVE = new ECCurve.Fp(p, a, b);
+            byte[] gEnc = HexCodec.decode(
+                "04"
+                + "79BE667EF9DCBBAC55A06295CE870B07"
+                + "029BFCDB2DCE28D959F2815B16F81798"
+                + "483ADA7726A3C4655DA4FBFC0E1108A8"
+                + "FD17B448A68554199C47D08FFB10D4B8");
+            ECPoint g = CURVE.decodePoint(gEnc);
+            DOMAIN = new ECDomainParameters(CURVE, g, n, h);
+        } catch (Exception e) {
+            throw new RuntimeException("secp256k1 init failed");
+        }
     }
 
     private Secp256k1() {
@@ -67,8 +86,8 @@ public final class Secp256k1 {
      */
     public static byte[] pointAdd(byte[] pubKey1, byte[] pubKey2) throws CryptoError {
         try {
-            ECPoint p1 = CURVE.getCurve().decodePoint(pubKey1);
-            ECPoint p2 = CURVE.getCurve().decodePoint(pubKey2);
+            ECPoint p1 = CURVE.decodePoint(pubKey1);
+            ECPoint p2 = CURVE.decodePoint(pubKey2);
             ECPoint sum = p1.add(p2).normalize();
             return sum.getEncoded(true);
         } catch (Exception e) {
@@ -83,7 +102,7 @@ public final class Secp256k1 {
      * @return the order of the secp256k1 generator point
      */
     public static BigInteger getN() {
-        return CURVE.getN();
+        return DOMAIN.getN();
     }
 
     /**
@@ -123,9 +142,9 @@ public final class Secp256k1 {
             BigInteger s = components[1];
 
             // Low-S normalization (BIP 62/146)
-            BigInteger halfN = CURVE.getN().shiftRight(1);
+            BigInteger halfN = DOMAIN.getN().shiftRight(1);
             if (s.compareTo(halfN) > 0) {
-                s = CURVE.getN().subtract(s);
+                s = DOMAIN.getN().subtract(s);
             }
 
             byte[] result = new byte[64];
@@ -173,7 +192,7 @@ public final class Secp256k1 {
             BigInteger r = new BigInteger(1, rBytes);
             BigInteger s = new BigInteger(1, sBytes);
 
-            ECPoint point = CURVE.getCurve().decodePoint(compressedPubKey);
+            ECPoint point = CURVE.decodePoint(compressedPubKey);
             ECPublicKeyParameters keyParams = new ECPublicKeyParameters(point, DOMAIN);
 
             ECDSASigner signer = new ECDSASigner();
@@ -277,7 +296,7 @@ public final class Secp256k1 {
             throw new CryptoError(CryptoError.ERR_INVALID_KEY,
                 "Private key must be greater than zero");
         }
-        if (privKey.compareTo(CURVE.getN()) >= 0) {
+        if (privKey.compareTo(DOMAIN.getN()) >= 0) {
             throw new CryptoError(CryptoError.ERR_INVALID_KEY,
                 "Private key must be less than curve order n");
         }
