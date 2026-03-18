@@ -20,6 +20,11 @@ import zipfile
 OLD = b'java/math'
 NEW = b'cldc/math'
 
+# java.lang.Number does not exist in CLDC 1.1; BigInteger must
+# extend Object instead.  Both strings are 16 bytes.
+OLD_SUPER = b'java/lang/Number'
+NEW_SUPER = b'java/lang/Object'
+
 # Java 1.4 class file major version
 TARGET_VERSION = 48
 
@@ -56,6 +61,11 @@ def process_jar(input_jar, output_jar):
                     if OLD in raw:
                         raw = raw.replace(OLD, NEW)
                         patched_classes += 1
+
+                    # Replace java/lang/Number -> java/lang/Object
+                    # (Number does not exist in CLDC 1.1)
+                    if OLD_SUPER in raw:
+                        raw = raw.replace(OLD_SUPER, NEW_SUPER)
 
                     # Downgrade class version for CLDC KVM
                     raw, did_downgrade = downgrade_version(raw)
