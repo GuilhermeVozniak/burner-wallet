@@ -109,17 +109,14 @@ Available targets:
             -outjars     ${dist.dir}/${midlet.name}-proguard.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
-            -libraryjars ${rt.jar}(java/lang/Number.class,java/io/Serializable.class,!java/math/**)
             -microedition
             -dontobfuscate
-            -optimizationpasses 3
-            -optimizations !code/simplification/advanced
+            -dontoptimize
             -allowaccessmodification
             -dontnote
             -dontwarn
             -keep public class * extends javax.microedition.midlet.MIDlet
             -keep class org.burnerwallet.** { *; }
-            -keep class org.bouncycastle.util.Integers { *; }
         </proguard>
     </target>
 
@@ -129,13 +126,32 @@ Available targets:
         <exec executable="python3" failonerror="true">
             <arg value="${basedir}/repackage-biginteger.py"/>
             <arg value="${dist.dir}/${midlet.name}-proguard.jar"/>
-            <arg value="${dist.dir}/${midlet.name}.jar"/>
+            <arg value="${dist.dir}/${midlet.name}-repackaged.jar"/>
         </exec>
         <delete file="${dist.dir}/${midlet.name}-proguard.jar"/>
     </target>
 
     <!-- ============================================================ -->
-    <target name="jad" depends="repackage" description="Generate JAD descriptor">
+    <!-- Re-preverify after repackaging (class renames invalidate StackMap) -->
+    <target name="repreverify" depends="repackage"
+            description="Re-preverify repackaged JAR for CLDC KVM">
+        <proguard>
+            -injars      ${dist.dir}/${midlet.name}-repackaged.jar
+            -outjars     ${dist.dir}/${midlet.name}.jar
+            -libraryjars ${cldc.jar}
+            -libraryjars ${midp.jar}
+            -microedition
+            -dontshrink
+            -dontoptimize
+            -dontobfuscate
+            -dontnote
+            -dontwarn
+        </proguard>
+        <delete file="${dist.dir}/${midlet.name}-repackaged.jar"/>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="jad" depends="repreverify" description="Generate JAD descriptor">
         <length file="${dist.dir}/${midlet.name}.jar" property="jar.size"/>
         <echo file="${dist.dir}/${midlet.name}.jad">MIDlet-Name: ${midlet.name}
 MIDlet-Version: ${midlet.version}
