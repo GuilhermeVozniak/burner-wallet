@@ -110,7 +110,7 @@ Available targets:
             -libraryjars ${midp.jar}
             -microedition
             -dontobfuscate
-            -optimizationpasses 3
+            -dontoptimize
             -allowaccessmodification
             -dontnote
             -dontwarn
