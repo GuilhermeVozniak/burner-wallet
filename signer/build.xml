@@ -106,7 +106,7 @@ Available targets:
             -injars      ${build.dir}/${midlet.name}-unprocessed.jar
             -injars      ${bc.jar}(!META-INF/**)
             -injars      ${rt.jar}(java/math/**.class,java/util/Arrays.class)
-            -outjars     ${dist.dir}/${midlet.name}.jar
+            -outjars     ${dist.dir}/${midlet.name}-proguard.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
             -microedition
@@ -121,7 +121,18 @@ Available targets:
     </target>
 
     <!-- ============================================================ -->
-    <target name="jad" depends="preverify" description="Generate JAD descriptor">
+    <target name="repackage" depends="preverify"
+            description="Repackage java.math to cldc.math for CLDC 1.1 KVM">
+        <exec executable="python3" failonerror="true">
+            <arg value="${basedir}/repackage-biginteger.py"/>
+            <arg value="${dist.dir}/${midlet.name}-proguard.jar"/>
+            <arg value="${dist.dir}/${midlet.name}.jar"/>
+        </exec>
+        <delete file="${dist.dir}/${midlet.name}-proguard.jar"/>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="jad" depends="repackage" description="Generate JAD descriptor">
         <length file="${dist.dir}/${midlet.name}.jar" property="jar.size"/>
         <echo file="${dist.dir}/${midlet.name}.jad">MIDlet-Name: ${midlet.name}
 MIDlet-Version: ${midlet.version}
