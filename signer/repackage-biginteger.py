@@ -21,9 +21,11 @@ OLD = b'java/math'
 NEW = b'cldc/math'
 
 # java.lang.Number does not exist in CLDC 1.1; BigInteger must
-# extend Object instead.  Both strings are 16 bytes.
-OLD_SUPER = b'java/lang/Number'
-NEW_SUPER = b'java/lang/Object'
+# extend Object instead.  We match the exact UTF8 constant pool
+# entry (tag=0x01, length=0x0010, "java/lang/Number") to avoid
+# corrupting java/lang/NumberFormatException.
+OLD_SUPER_ENTRY = b'\x01\x00\x10java/lang/Number'
+NEW_SUPER_ENTRY = b'\x01\x00\x10java/lang/Object'
 
 # Java 1.4 class file major version
 TARGET_VERSION = 48
@@ -64,8 +66,10 @@ def process_jar(input_jar, output_jar):
 
                     # Replace java/lang/Number -> java/lang/Object
                     # (Number does not exist in CLDC 1.1)
-                    if OLD_SUPER in raw:
-                        raw = raw.replace(OLD_SUPER, NEW_SUPER)
+                    # Uses exact UTF8 CP entry match to avoid corrupting
+                    # java/lang/NumberFormatException
+                    if OLD_SUPER_ENTRY in raw:
+                        raw = raw.replace(OLD_SUPER_ENTRY, NEW_SUPER_ENTRY)
 
                     # Downgrade class version for CLDC KVM
                     raw, did_downgrade = downgrade_version(raw)
