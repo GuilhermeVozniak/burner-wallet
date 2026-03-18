@@ -109,14 +109,17 @@ Available targets:
             -outjars     ${dist.dir}/${midlet.name}-proguard.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
+            -libraryjars ${rt.jar}(java/lang/Number.class,java/io/Serializable.class,!java/math/**)
             -microedition
             -dontobfuscate
-            -dontoptimize
+            -optimizationpasses 3
+            -optimizations !code/simplification/advanced
             -allowaccessmodification
             -dontnote
             -dontwarn
             -keep public class * extends javax.microedition.midlet.MIDlet
             -keep class org.burnerwallet.** { *; }
+            -keep class org.bouncycastle.util.Integers { *; }
         </proguard>
     </target>
 
