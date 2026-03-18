@@ -105,22 +105,34 @@ Available targets:
         <proguard>
             -injars      ${build.dir}/${midlet.name}-unprocessed.jar
             -injars      ${bc.jar}(!META-INF/**)
-            -outjars     ${dist.dir}/${midlet.name}.jar
+            -outjars     ${dist.dir}/${midlet.name}-proguard.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
             -microedition
             -dontobfuscate
-            -optimizationpasses 3
+            -dontoptimize
             -allowaccessmodification
             -dontnote
             -dontwarn
             -keep public class * extends javax.microedition.midlet.MIDlet
             -keep class org.burnerwallet.** { *; }
+            -keep class cldc.math.BigInteger { *; }
         </proguard>
     </target>
 
     <!-- ============================================================ -->
-    <target name="jad" depends="preverify" description="Generate JAD descriptor">
+    <target name="repackage" depends="preverify"
+            description="Repackage java.math to cldc.math for CLDC 1.1 KVM">
+        <exec executable="python3" failonerror="true">
+            <arg value="${basedir}/repackage-biginteger.py"/>
+            <arg value="${dist.dir}/${midlet.name}-proguard.jar"/>
+            <arg value="${dist.dir}/${midlet.name}.jar"/>
+        </exec>
+        <delete file="${dist.dir}/${midlet.name}-proguard.jar"/>
+    </target>
+
+    <!-- ============================================================ -->
+    <target name="jad" depends="repackage" description="Generate JAD descriptor">
         <length file="${dist.dir}/${midlet.name}.jar" property="jar.size"/>
         <echo file="${dist.dir}/${midlet.name}.jad">MIDlet-Name: ${midlet.name}
 MIDlet-Version: ${midlet.version}

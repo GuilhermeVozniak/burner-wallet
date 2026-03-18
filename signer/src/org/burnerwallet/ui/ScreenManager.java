@@ -4,6 +4,8 @@ import javax.microedition.lcdui.Alert;
 import javax.microedition.lcdui.AlertType;
 import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Form;
+import javax.microedition.lcdui.Gauge;
 import javax.microedition.midlet.MIDlet;
 
 public class ScreenManager {
@@ -39,6 +41,38 @@ public class ScreenManager {
         Alert alert = new Alert(title, message, null, type);
         alert.setTimeout(Alert.FOREVER);
         display.setCurrent(alert, next);
+    }
+
+    /**
+     * Show an indeterminate loading screen with the given message.
+     * Use with runAsync() for long-running operations.
+     *
+     * @param message text to display (e.g. "Deriving keys...")
+     */
+    public void showLoading(String message) {
+        Form form = new Form("Please wait");
+        Gauge gauge = new Gauge(message, false,
+                Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING);
+        form.append(gauge);
+        display.setCurrent(form);
+    }
+
+    /**
+     * Run a task on a background thread. When complete, the callback
+     * is invoked on the UI thread via Display.callSerially().
+     *
+     * Java 1.4 compatible (CLDC 1.1).
+     *
+     * @param task     the work to execute in background
+     * @param callback called on the UI thread when task finishes
+     */
+    public void runAsync(final Runnable task, final Runnable callback) {
+        new Thread(new Runnable() {
+            public void run() {
+                task.run();
+                display.callSerially(callback);
+            }
+        }).start();
     }
 
     public Display getDisplay() { return display; }
