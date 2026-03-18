@@ -48,6 +48,12 @@ public class BurnerWalletMIDlet extends MIDlet
     /** PIN from the CREATE step, held until CONFIRM completes. */
     private String pendingPin;
 
+    /** Temporary fields for async operation results. */
+    private byte[] unlockResult;
+    private String unlockPassphrase;
+    private Exception unlockError;
+    private Exception createError;
+
     protected void startApp() throws MIDletStateChangeException {
         if (!initialized) {
             initialized = true;
@@ -101,10 +107,19 @@ public class BurnerWalletMIDlet extends MIDlet
 
     // ---- OnboardingListener ----
 
-    public void onOnboardingComplete(String mnemonic, String passphrase) {
-        currentSeed = Bip39Mnemonic.toSeed(mnemonic, passphrase);
-        currentPassphrase = passphrase;
-        showPinCreate();
+    public void onOnboardingComplete(final String mnemonic,
+                                     final String passphrase) {
+        screens.showLoading("Deriving seed...");
+        screens.runAsync(new Runnable() {
+            public void run() {
+                currentSeed = Bip39Mnemonic.toSeed(mnemonic, passphrase);
+                currentPassphrase = passphrase;
+            }
+        }, new Runnable() {
+            public void run() {
+                showPinCreate();
+            }
+        });
     }
 
     public void onOnboardingCancelled() {
@@ -113,24 +128,44 @@ public class BurnerWalletMIDlet extends MIDlet
 
     // ---- PinListener ----
 
-    public void onPinEntered(String pin) {
-        try {
-            byte[] seed = walletStore.unlock(pin);
-            if (seed != null) {
-                currentSeed = seed;
-                currentPassphrase = walletStore.getPassphrase(pin);
-                showHome();
-            } else {
-                PinScreen pinScreen = new PinScreen(
-                        screens, PinScreen.MODE_ENTER, this);
-                screens.showError("Wrong PIN", pinScreen.getForm());
+    public void onPinEntered(final String pin) {
+        screens.showLoading("Unlocking...");
+        screens.runAsync(new Runnable() {
+            public void run() {
+                try {
+                    unlockResult = walletStore.unlock(pin);
+                    if (unlockResult != null) {
+                        unlockPassphrase = walletStore.getPassphrase(pin);
+                    }
+                    unlockError = null;
+                } catch (Exception e) {
+                    unlockResult = null;
+                    unlockError = e;
+                }
             }
-        } catch (Exception e) {
-            PinScreen pinScreen = new PinScreen(
-                    screens, PinScreen.MODE_ENTER, this);
-            screens.showError("Unlock failed: " + e.getMessage(),
-                    pinScreen.getForm());
-        }
+        }, new Runnable() {
+            public void run() {
+                if (unlockError != null) {
+                    PinScreen pinScreen = new PinScreen(
+                            screens, PinScreen.MODE_ENTER,
+                            BurnerWalletMIDlet.this);
+                    screens.showError(
+                            "Unlock failed: " + unlockError.getMessage(),
+                            pinScreen.getForm());
+                } else if (unlockResult != null) {
+                    currentSeed = unlockResult;
+                    currentPassphrase = unlockPassphrase;
+                    unlockResult = null;
+                    unlockPassphrase = null;
+                    showHome();
+                } else {
+                    PinScreen pinScreen = new PinScreen(
+                            screens, PinScreen.MODE_ENTER,
+                            BurnerWalletMIDlet.this);
+                    screens.showError("Wrong PIN", pinScreen.getForm());
+                }
+            }
+        });
     }
 
     public void onPinCreated(String pin) {
@@ -138,22 +173,34 @@ public class BurnerWalletMIDlet extends MIDlet
         showPinConfirm();
     }
 
-    public void onPinConfirmed(String pin) {
-        try {
-            walletStore.createWallet(
-                    currentSeed, currentPassphrase, pin, false);
-            pendingPin = null;
-
-            WalletHomeScreen home = new WalletHomeScreen(screens, this);
-            screens.showInfo("Wallet created!", home.getScreen());
-        } catch (CryptoError e) {
-            screens.showError("Wallet creation failed: " + e.getMessage(),
-                    null);
-            showOnboarding();
-        } catch (Exception e) {
-            screens.showError("Storage error: " + e.getMessage(), null);
-            showOnboarding();
-        }
+    public void onPinConfirmed(final String pin) {
+        screens.showLoading("Creating wallet...");
+        screens.runAsync(new Runnable() {
+            public void run() {
+                try {
+                    walletStore.createWallet(
+                            currentSeed, currentPassphrase, pin, false);
+                    createError = null;
+                } catch (Exception e) {
+                    createError = e;
+                }
+            }
+        }, new Runnable() {
+            public void run() {
+                if (createError != null) {
+                    screens.showError(
+                            "Wallet creation failed: "
+                            + createError.getMessage(), null);
+                    showOnboarding();
+                } else {
+                    pendingPin = null;
+                    WalletHomeScreen home =
+                            new WalletHomeScreen(screens,
+                                    BurnerWalletMIDlet.this);
+                    screens.showInfo("Wallet created!", home.getScreen());
+                }
+            }
+        });
     }
 
     public void onPinCancelled() {

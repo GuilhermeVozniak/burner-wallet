@@ -105,6 +105,7 @@ Available targets:
         <proguard>
             -injars      ${build.dir}/${midlet.name}-unprocessed.jar
             -injars      ${bc.jar}(!META-INF/**)
+            -injars      ${rt.jar}(java/math/**.class,java/util/Arrays.class)
             -outjars     ${dist.dir}/${midlet.name}.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
