@@ -9,6 +9,12 @@ package org.burnerwallet.chains.bitcoin;
  */
 public class PsbtOutput {
 
+    /**
+     * Key/value pairs this signer does not interpret, preserved for
+     * re-serialization. Each element is a {@code byte[][]} of {@code {key, value}}.
+     */
+    public java.util.Vector unknown = new java.util.Vector();
+
     /** Raw BIP32 derivation data (fingerprint + path); null if not present. */
     public byte[] bip32Derivation;
 

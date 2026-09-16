@@ -101,6 +101,40 @@ public class EntropyCollectorTest {
     }
 
     /**
+     * Auxiliary samples must change the output.
+     */
+    @Test
+    public void extrasChangeEntropy() {
+        long[] timings = new long[64];
+        long[] extras1 = new long[64];
+        long[] extras2 = new long[64];
+        for (int i = 0; i < 64; i++) {
+            timings[i] = 100 + i;
+            extras1[i] = 1000L * i;
+            extras2[i] = 1000L * i;
+        }
+        extras2[3] ^= 1;
+        byte[] a = EntropyCollector.mixEntropy(timings, extras1);
+        byte[] b = EntropyCollector.mixEntropy(timings, extras2);
+        byte[] c = EntropyCollector.mixEntropy(timings);
+        assertEquals(32, a.length);
+        assertFalse(ByteArrayUtils.constantTimeEquals(a, b));
+        assertFalse(ByteArrayUtils.constantTimeEquals(a, c));
+        assertArrayEquals(c, EntropyCollector.mixEntropy(timings, null));
+    }
+
+    /**
+     * Distinct-delta counting used to reject monotonous key mashing.
+     */
+    @Test
+    public void countDistinctDeltas() {
+        long[] deltas = { 150, 150, 151, 150, 200, 151, 999 };
+        assertEquals(4, EntropyCollector.countDistinct(deltas, deltas.length));
+        assertEquals(1, EntropyCollector.countDistinct(deltas, 2));
+        assertEquals(0, EntropyCollector.countDistinct(deltas, 0));
+    }
+
+    /**
      * The first 16 bytes of mixEntropy output can be extracted
      * as a sub-array (useful for 128-bit entropy for 12-word mnemonic).
      */

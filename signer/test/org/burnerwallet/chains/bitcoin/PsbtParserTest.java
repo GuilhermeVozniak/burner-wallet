@@ -234,6 +234,113 @@ public class PsbtParserTest {
     }
 
     // ---------------------------------------------------------------
+    // Robustness: malformed input must fail with CryptoError, never with
+    // an unbounded allocation or a runtime exception.
+    // ---------------------------------------------------------------
+
+    @Test
+    public void rejectsOverflowingLengthWithoutAllocating() throws CryptoError {
+        // Global map: key len 1, type 0x00, value len 0x7FFFFFFF
+        byte[] psbt = HexCodec.decode(MAGIC + "01" + "00" + "feffffff7f" + "00");
+        try {
+            PsbtParser.parse(psbt);
+            fail("Expected CryptoError");
+        } catch (CryptoError e) {
+            assertEquals(CryptoError.ERR_PSBT, e.getErrorCode());
+        }
+    }
+
+    @Test
+    public void rejectsTruncatedCompactSize() throws CryptoError {
+        byte[] psbt = HexCodec.decode(MAGIC + "fd");
+        try {
+            PsbtParser.parse(psbt);
+            fail("Expected CryptoError");
+        } catch (CryptoError e) {
+            assertEquals(CryptoError.ERR_PSBT, e.getErrorCode());
+        }
+    }
+
+    @Test
+    public void rejectsWitnessUtxoScriptLengthMismatch() throws CryptoError {
+        // 9-byte value claiming a 22-byte script
+        String witnessUtxo = "50c3000000000000" + "16";
+        String inputMap = "01" + "01" + "09" + witnessUtxo + "00";
+        byte[] psbt = HexCodec.decode(MAGIC + buildGlobalMap(UNSIGNED_TX_HEX)
+            + inputMap + emptyMap());
+        try {
+            PsbtParser.parse(psbt);
+            fail("Expected CryptoError");
+        } catch (CryptoError e) {
+            assertTrue(e.getMessage(), e.getMessage().indexOf("length mismatch") >= 0);
+        }
+    }
+
+    @Test
+    public void sighashTypeMustBeFourBytes() throws CryptoError {
+        // 2-byte sighash value: rejected
+        String badInput = "01" + "03" + "02" + "0100" + "00";
+        try {
+            PsbtParser.parse(HexCodec.decode(MAGIC + buildGlobalMap(UNSIGNED_TX_HEX)
+                + badInput + emptyMap()));
+            fail("Expected CryptoError");
+        } catch (CryptoError e) {
+            assertTrue(e.getMessage().indexOf("sighash") >= 0);
+        }
+        // 4-byte value 0x82 parses
+        String goodInput = "01" + "03" + "04" + "82000000" + "00";
+        PsbtTransaction psbt = PsbtParser.parse(HexCodec.decode(MAGIC
+            + buildGlobalMap(UNSIGNED_TX_HEX) + goodInput + emptyMap()));
+        assertEquals(0x82, psbt.inputs[0].sighashType);
+    }
+
+    @Test
+    public void rejectsDuplicateUnsignedTx() throws CryptoError {
+        byte[] txBytes = HexCodec.decode(UNSIGNED_TX_HEX);
+        String valueLenHex = HexCodec.encode(
+            org.burnerwallet.core.CompactSize.write(txBytes.length));
+        String entry = "01" + "00" + valueLenHex + UNSIGNED_TX_HEX;
+        byte[] psbt = HexCodec.decode(MAGIC + entry + entry + "00" + emptyMap() + emptyMap());
+        try {
+            PsbtParser.parse(psbt);
+            fail("Expected CryptoError for duplicate key");
+        } catch (CryptoError e) {
+            assertTrue(e.getMessage().indexOf("Duplicate") >= 0);
+        }
+    }
+
+    @Test
+    public void unknownKeysAreRoundTripped() throws CryptoError {
+        // Unknown global entry + unknown input entry (type 0xFC, key data 'ab')
+        String unknownGlobal = "01" + "fc" + "02" + "beef";
+        String unknownInput = "03" + "fc" + "6162" + "01" + "7f";
+        byte[] txBytes = HexCodec.decode(UNSIGNED_TX_HEX);
+        String valueLenHex = HexCodec.encode(
+            org.burnerwallet.core.CompactSize.write(txBytes.length));
+        String globalMap = "01" + "00" + valueLenHex + UNSIGNED_TX_HEX + unknownGlobal + "00";
+        String inputMap = unknownInput + "00";
+        byte[] original = HexCodec.decode(MAGIC + globalMap + inputMap + emptyMap());
+
+        PsbtTransaction psbt = PsbtParser.parse(original);
+        assertEquals(1, psbt.unknown.size());
+        assertEquals(1, psbt.inputs[0].unknown.size());
+
+        byte[] reserialized = PsbtSerializer.serialize(psbt);
+        assertArrayEquals("unknown pairs must survive re-serialization",
+            original, reserialized);
+    }
+
+    @Test
+    public void parsesNonWitnessUtxo() throws CryptoError {
+        byte[] prev = HexCodec.decode(UNSIGNED_TX_HEX);
+        String prevLen = HexCodec.encode(org.burnerwallet.core.CompactSize.write(prev.length));
+        String inputMap = "01" + "00" + prevLen + UNSIGNED_TX_HEX + "00";
+        PsbtTransaction psbt = PsbtParser.parse(HexCodec.decode(MAGIC
+            + buildGlobalMap(UNSIGNED_TX_HEX) + inputMap + emptyMap()));
+        assertArrayEquals(prev, psbt.inputs[0].nonWitnessUtxo);
+    }
+
+    // ---------------------------------------------------------------
     // Test 5: Fee calculation = inputValue - outputValue
     // ---------------------------------------------------------------
 

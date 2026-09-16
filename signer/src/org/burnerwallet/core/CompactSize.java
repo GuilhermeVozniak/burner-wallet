@@ -17,6 +17,41 @@ package org.burnerwallet.core;
 public class CompactSize {
 
     /**
+     * Read a CompactSize-encoded integer, verifying that every byte of the
+     * encoding lies inside {@code data}.
+     *
+     * Use this for untrusted input (PSBTs, transactions). {@link #read}
+     * throws {@code ArrayIndexOutOfBoundsException} on truncated data.
+     *
+     * @param data   the byte array to read from
+     * @param offset the position of the first byte
+     * @return a two-element long array: [value, bytesConsumed]
+     * @throws CryptoError if the encoding runs past the end of {@code data}
+     */
+    public static long[] readChecked(byte[] data, int offset) throws CryptoError {
+        if (data == null || offset < 0 || offset >= data.length) {
+            throw new CryptoError(CryptoError.ERR_PSBT,
+                "CompactSize truncated at offset " + offset);
+        }
+        int first = data[offset] & 0xFF;
+        int needed;
+        if (first < 0xFD) {
+            needed = 1;
+        } else if (first == 0xFD) {
+            needed = 3;
+        } else if (first == 0xFE) {
+            needed = 5;
+        } else {
+            needed = 9;
+        }
+        if (needed > data.length - offset) {
+            throw new CryptoError(CryptoError.ERR_PSBT,
+                "CompactSize truncated at offset " + offset);
+        }
+        return read(data, offset);
+    }
+
+    /**
      * Read a CompactSize-encoded integer from a byte array at the given offset.
      *
      * @param data   the byte array to read from

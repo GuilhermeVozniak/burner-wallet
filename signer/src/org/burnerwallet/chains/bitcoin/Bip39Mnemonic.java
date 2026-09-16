@@ -160,7 +160,36 @@ public class Bip39Mnemonic {
             password = mnemonic.getBytes();
             salt = ("mnemonic" + passphrase).getBytes();
         }
-        return HashUtils.pbkdf2HmacSha512(password, salt, 2048, 64);
+        byte[] seed = HashUtils.pbkdf2HmacSha512(password, salt, 2048, 64);
+        // The mnemonic bytes are as sensitive as the seed; wipe our copy.
+        ByteArrayUtils.zeroFill(password);
+        ByteArrayUtils.zeroFill(salt);
+        return seed;
+    }
+
+    /**
+     * Check whether a passphrase is safe to use on this platform.
+     *
+     * BIP39 requires NFKD normalization of the passphrase before PBKDF2.
+     * CLDC has no Unicode normalizer, so a passphrase containing non-ASCII
+     * characters could derive a different seed here than on a compliant
+     * wallet (breaking recovery). Only printable ASCII (0x20..0x7E) is
+     * accepted; ASCII is NFKD-stable.
+     *
+     * @param passphrase the candidate passphrase (may be empty)
+     * @return true if every character is printable ASCII
+     */
+    public static boolean isPassphraseAscii(String passphrase) {
+        if (passphrase == null) {
+            return true;
+        }
+        for (int i = 0; i < passphrase.length(); i++) {
+            char c = passphrase.charAt(i);
+            if (c < 0x20 || c > 0x7E) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

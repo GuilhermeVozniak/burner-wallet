@@ -93,6 +93,23 @@ public class MultiFrameTest {
     }
 
     @Test
+    public void tooManyFramesRejected() {
+        // 148 data bytes per 150-byte frame; 256 frames would wrap the 1-byte counter
+        byte[] payload = new byte[148 * 256];
+        try {
+            MultiFrameEncoder.encode(payload, 150);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().indexOf("255") >= 0);
+        }
+        // Exactly 255 frames is fine
+        byte[][] frames = MultiFrameEncoder.encode(new byte[148 * 255], 150);
+        assertEquals(255, frames.length);
+        assertEquals(255, frames[254][0] & 0xFF);
+        assertEquals(254, frames[254][1] & 0xFF);
+    }
+
+    @Test
     public void emptyPayload() {
         byte[] payload = new byte[0];
         byte[][] frames = MultiFrameEncoder.encode(payload, 150);

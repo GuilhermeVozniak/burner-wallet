@@ -1,21 +1,26 @@
 {
-  "description": "Cross-implementation PSBT signing vector — must produce identical results in Rust and Java ME",
+  "description": "Cross-implementation PSBT signing vector. The Java ME signer produces signature_der_sighash and signed_psbt; the Rust companion must recompute the same sighash, verify the signature, and finalize signed_psbt into a valid transaction.",
   "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
   "passphrase": "",
   "derivation_path": "m/84'/0'/0'/0/0",
   "network": "mainnet",
   "pubkey": "0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c",
   "pubkey_hash": "c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2",
-  "unsigned_tx": "0200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200000000",
+  "prev_tx": "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff025151ffffffff01400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200000000",
+  "prev_txid": "438fe1496d362e240509e01cc1e99469513528ba7a354d08a9e87be7e256b82b",
+  "unsigned_tx": "02000000012bb856e2e77be8a9084d357aba2835516994e9c11ce00905242e366d49e18f430000000000fdffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200350c00",
+  "txid": "d2be73644dea69797143c04103faa4bdd2e7c40cec3e65f6ef106ca1d1e102e2",
   "witness_utxo_value": 200000,
   "witness_utxo_script": "0014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2",
-  "sighash": "60750e6c99870ec5f3666575e81cc4798a82058955757a3d8377ac017f360fba",
-  "signature_der_sighash": "30440220036fc40e1b9e9abdcdc42215b5cb279b61d85cb34b89e1cc16948b00a2285ceb02202b6c1261ee8cf198c4a380753d98e12f25bb94b9e576574bb19e96f03cfbea9101",
-  "unsigned_psbt": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2000000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e20000",
-  "signed_psbt": "70736274ff0100520200000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000ffffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2000000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e222020330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c4730440220036fc40e1b9e9abdcdc42215b5cb279b61d85cb34b89e1cc16948b00a2285ceb02202b6c1261ee8cf198c4a380753d98e12f25bb94b9e576574bb19e96f03cfbea91010000",
+  "sighash": "48cb2f143f6434c54016034e0690b5a67bf6f47b5d7a58a922e9b8d5f8bd3988",
+  "signature_der_sighash": "304402205e8f445d690d903f2b1549ba42ece51c21cd26b56be7f64ed8c3cc975cc492fc02206bd9e21297025c0f5490d8d85594db170a90e1c9bbc8c9aedea8c349e73ea6f901",
+  "unsigned_psbt": "70736274ff01005202000000012bb856e2e77be8a9084d357aba2835516994e9c11ce00905242e366d49e18f430000000000fdffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200350c000001005402000000010000000000000000000000000000000000000000000000000000000000000000ffffffff025151ffffffff01400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e20000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e20000",
+  "signed_psbt": "70736274ff01005202000000012bb856e2e77be8a9084d357aba2835516994e9c11ce00905242e366d49e18f430000000000fdffffff01a086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e200350c000001005402000000010000000000000000000000000000000000000000000000000000000000000000ffffffff025151ffffffff01400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e20000000001011f400d030000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e222020330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c47304402205e8f445d690d903f2b1549ba42ece51c21cd26b56be7f64ed8c3cc975cc492fc02206bd9e21297025c0f5490d8d85594db170a90e1c9bbc8c9aedea8c349e73ea6f9010000",
   "notes": {
-    "tx_description": "Version 2, 1 input spending fake prevout aaaa...aaaa:0 (200000 sats), 1 output sending 100000 sats to bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
-    "sighash_type": "SIGHASH_ALL (0x01)",
-    "signature_scheme": "ECDSA secp256k1 with RFC 6979 deterministic k, low-S enforced (BIP 62/146)"
+    "prev_tx_description": "Coinbase-like funding transaction (version 2, scriptSig 5151) paying 200000 sats to the P2WPKH script of m/84'/0'/0'/0/0. Included in the PSBT as non_witness_utxo so the signer can verify the input amount.",
+    "tx_description": "Version 2, 1 input spending prev_txid:0 with nSequence 0xfffffffd (opt-in RBF), 1 output sending 100000 sats to bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu, nLockTime 800000. Fee 100000 sats.",
+    "sighash_type": "SIGHASH_ALL (0x01); the signer refuses any other type",
+    "signature_scheme": "ECDSA secp256k1 with RFC 6979 deterministic k, low-S enforced (BIP 62/146)",
+    "psbt_input_fields": "non_witness_utxo (0x00) + witness_utxo (0x01); signed_psbt adds partial_sig (0x02). The signer never emits final_script_witness; the companion finalizes."
   }
 }

@@ -1,15 +1,27 @@
 package org.burnerwallet.core;
 
 /**
- * BIP173 Bech32 encoding and decoding for segwit addresses.
+ * BIP173 Bech32 and BIP350 Bech32m encoding and decoding for segwit addresses.
  *
- * Reference: https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+ * Witness version 0 uses the Bech32 checksum constant (1); versions 1..16
+ * use the Bech32m constant (0x2bc830a3). An address whose checksum constant
+ * does not match its witness version is rejected, as required by BIP350.
+ *
+ * References:
+ *   https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+ *   https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
 public class Bech32 {
 
     private static final String CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+    /** Checksum constant for Bech32 (witness version 0). */
+    private static final int BECH32_CONST = 1;
+
+    /** Checksum constant for Bech32m (witness versions 1..16), BIP350. */
+    private static final int BECH32M_CONST = 0x2bc830a3;
 
     /** Generator values for the Bech32 polymod checksum. */
     private static final int[] GENERATOR = {
@@ -48,7 +60,8 @@ public class Bech32 {
         data[0] = (byte) witnessVersion;
         System.arraycopy(converted, 0, data, 1, converted.length);
 
-        return bech32Encode(hrp, data);
+        int constant = witnessVersion == 0 ? BECH32_CONST : BECH32M_CONST;
+        return bech32Encode(hrp, data, constant);
     }
 
     /**
@@ -116,8 +129,9 @@ public class Bech32 {
             dataWithChecksum[i] = (byte) idx;
         }
 
-        // Verify checksum
-        if (!verifyChecksum(hrpLower, dataWithChecksum)) {
+        // Verify checksum: the polymod tells us which encoding was used
+        int checksumConstant = checksumConstant(hrpLower, dataWithChecksum);
+        if (checksumConstant == 0) {
             throw new CryptoError(CryptoError.ERR_CHECKSUM,
                 "Invalid bech32 checksum");
         }
@@ -135,6 +149,13 @@ public class Bech32 {
         if (witnessVersion > 16) {
             throw new CryptoError(CryptoError.ERR_ENCODING,
                 "Invalid witness version: " + witnessVersion);
+        }
+
+        // BIP350: v0 must use Bech32, v1+ must use Bech32m
+        int expectedConstant = witnessVersion == 0 ? BECH32_CONST : BECH32M_CONST;
+        if (checksumConstant != expectedConstant) {
+            throw new CryptoError(CryptoError.ERR_CHECKSUM,
+                "Checksum encoding does not match witness version " + witnessVersion);
         }
 
         // Convert remaining 5-bit values to 8-bit witness program
@@ -196,26 +217,35 @@ public class Bech32 {
     }
 
     /**
-     * Verify the bech32 checksum.
+     * Determine which checksum constant the data verifies against.
+     *
+     * @return BECH32_CONST, BECH32M_CONST, or 0 if the checksum is invalid
      */
-    private static boolean verifyChecksum(String hrp, byte[] data) {
+    private static int checksumConstant(String hrp, byte[] data) {
         byte[] expanded = hrpExpand(hrp);
         byte[] values = new byte[expanded.length + data.length];
         System.arraycopy(expanded, 0, values, 0, expanded.length);
         System.arraycopy(data, 0, values, expanded.length, data.length);
-        return polymod(values) == 1;
+        int mod = polymod(values);
+        if (mod == BECH32_CONST) {
+            return BECH32_CONST;
+        }
+        if (mod == BECH32M_CONST) {
+            return BECH32M_CONST;
+        }
+        return 0;
     }
 
     /**
-     * Create the bech32 checksum (6 values).
+     * Create the checksum (6 values) for the given constant.
      */
-    private static byte[] createChecksum(String hrp, byte[] data) {
+    private static byte[] createChecksum(String hrp, byte[] data, int constant) {
         byte[] expanded = hrpExpand(hrp);
         byte[] values = new byte[expanded.length + data.length + 6];
         System.arraycopy(expanded, 0, values, 0, expanded.length);
         System.arraycopy(data, 0, values, expanded.length, data.length);
         // Last 6 bytes are zero (already initialized)
-        int mod = polymod(values) ^ 1;
+        int mod = polymod(values) ^ constant;
         byte[] ret = new byte[6];
         for (int i = 0; i < 6; i++) {
             ret[i] = (byte) ((mod >> (5 * (5 - i))) & 31);
@@ -224,10 +254,10 @@ public class Bech32 {
     }
 
     /**
-     * Encode HRP and 5-bit data values into a bech32 string.
+     * Encode HRP and 5-bit data values into a bech32/bech32m string.
      */
-    private static String bech32Encode(String hrp, byte[] data) {
-        byte[] checksum = createChecksum(hrp, data);
+    private static String bech32Encode(String hrp, byte[] data, int constant) {
+        byte[] checksum = createChecksum(hrp, data, constant);
         StringBuffer sb = new StringBuffer(hrp.length() + 1 + data.length + 6);
         sb.append(hrp);
         sb.append('1');

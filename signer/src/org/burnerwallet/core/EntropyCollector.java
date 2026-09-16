@@ -6,12 +6,19 @@ import javax.microedition.lcdui.Graphics;
 /**
  * Collects entropy from keypad timing on a Nokia C1-01.
  *
- * The user presses random keys; the millisecond deltas between
- * consecutive presses are recorded. When enough presses have been
- * collected, the timing array is hashed with SHA-256 to produce
- * 32 bytes of entropy suitable for BIP39 mnemonic generation.
+ * The user presses random keys. For every press the collector records the
+ * millisecond delta since the previous press (the primary, user-driven
+ * entropy) and an auxiliary word mixing the absolute timestamp, the key
+ * code, free heap size and an object identity hash. All samples are
+ * hashed with SHA-256 to produce 32 bytes of entropy suitable for BIP39
+ * mnemonic generation.
  *
- * The static {@link #mixEntropy(long[])} method is unit-testable
+ * Human key intervals cluster tightly, so a session is only accepted once
+ * {@link #REQUIRED_PRESSES} presses have been made <em>and</em> the deltas
+ * show at least {@link #MIN_DISTINCT_DELTAS} distinct values; otherwise
+ * the user is asked to keep going (up to {@link #MAX_PRESSES}).
+ *
+ * The static {@link #mixEntropy(long[], long[])} method is unit-testable
  * on desktop JDK. Instance methods depend on MIDP Canvas and are
  * tested manually on the device or emulator.
  *
@@ -19,11 +26,20 @@ import javax.microedition.lcdui.Graphics;
  */
 public class EntropyCollector extends Canvas {
 
-    /** Number of keypresses required before entropy is ready. */
-    private static final int REQUIRED_PRESSES = 32;
+    /** Number of keypresses required before entropy can be ready. */
+    private static final int REQUIRED_PRESSES = 64;
+
+    /** Minimum number of distinct timing deltas for the session to count. */
+    private static final int MIN_DISTINCT_DELTAS = 16;
+
+    /** Hard cap: accept the session at this many presses regardless. */
+    private static final int MAX_PRESSES = REQUIRED_PRESSES * 3;
 
     /** Recorded timing deltas between consecutive keypresses. */
     private long[] timings;
+
+    /** Auxiliary per-press samples (timestamp, key code, heap, identity hash). */
+    private long[] extras;
 
     /** Number of keypresses collected so far. */
     private int count;
@@ -44,17 +60,18 @@ public class EntropyCollector extends Canvas {
         /**
          * Called when the required number of keypresses has been collected.
          *
-         * @param entropy 32 bytes of SHA-256 hashed timing entropy
+         * @param entropy 32 bytes of SHA-256 hashed entropy
          */
         void onEntropyReady(byte[] entropy);
     }
 
     /**
      * Create a new EntropyCollector.
-     * Initializes the timing array and records the current time.
+     * Initializes the sample arrays and records the current time.
      */
     public EntropyCollector() {
-        this.timings = new long[REQUIRED_PRESSES];
+        this.timings = new long[MAX_PRESSES];
+        this.extras = new long[MAX_PRESSES];
         this.count = 0;
         this.lastTime = System.currentTimeMillis();
         this.ready = false;
@@ -63,35 +80,81 @@ public class EntropyCollector extends Canvas {
     /**
      * Convert timing deltas into 32 bytes of entropy.
      *
-     * Each long is serialized as 8 big-endian bytes, all are concatenated,
-     * and the result is hashed with SHA-256 to produce a uniform 32-byte output.
-     *
-     * This method is static and Canvas-independent for unit testing.
+     * Equivalent to {@link #mixEntropy(long[], long[])} with no extras.
      *
      * @param timingDeltas array of timing deltas (milliseconds between keypresses)
      * @return 32-byte SHA-256 hash of the serialized timing data
      */
     public static byte[] mixEntropy(long[] timingDeltas) {
-        byte[] concatenated = new byte[timingDeltas.length * 8];
+        return mixEntropy(timingDeltas, null);
+    }
+
+    /**
+     * Convert timing deltas and auxiliary samples into 32 bytes of entropy.
+     *
+     * Each long is serialized as 8 big-endian bytes, deltas first then
+     * extras, and the concatenation is hashed with SHA-256.
+     *
+     * This method is static and Canvas-independent for unit testing.
+     *
+     * @param timingDeltas array of timing deltas (milliseconds between keypresses)
+     * @param extraSamples auxiliary samples, or null
+     * @return 32-byte SHA-256 hash of the serialized data
+     */
+    public static byte[] mixEntropy(long[] timingDeltas, long[] extraSamples) {
+        int extraLen = extraSamples == null ? 0 : extraSamples.length;
+        byte[] concatenated = new byte[(timingDeltas.length + extraLen) * 8];
         for (int i = 0; i < timingDeltas.length; i++) {
-            long v = timingDeltas[i];
-            int offset = i * 8;
-            concatenated[offset]     = (byte) ((v >> 56) & 0xFF);
-            concatenated[offset + 1] = (byte) ((v >> 48) & 0xFF);
-            concatenated[offset + 2] = (byte) ((v >> 40) & 0xFF);
-            concatenated[offset + 3] = (byte) ((v >> 32) & 0xFF);
-            concatenated[offset + 4] = (byte) ((v >> 24) & 0xFF);
-            concatenated[offset + 5] = (byte) ((v >> 16) & 0xFF);
-            concatenated[offset + 6] = (byte) ((v >>  8) & 0xFF);
-            concatenated[offset + 7] = (byte) ( v        & 0xFF);
+            putLong(concatenated, i * 8, timingDeltas[i]);
         }
-        return HashUtils.sha256(concatenated);
+        for (int i = 0; i < extraLen; i++) {
+            putLong(concatenated, (timingDeltas.length + i) * 8, extraSamples[i]);
+        }
+        byte[] out = HashUtils.sha256(concatenated);
+        ByteArrayUtils.zeroFill(concatenated);
+        return out;
+    }
+
+    private static void putLong(byte[] buf, int offset, long v) {
+        buf[offset]     = (byte) ((v >> 56) & 0xFF);
+        buf[offset + 1] = (byte) ((v >> 48) & 0xFF);
+        buf[offset + 2] = (byte) ((v >> 40) & 0xFF);
+        buf[offset + 3] = (byte) ((v >> 32) & 0xFF);
+        buf[offset + 4] = (byte) ((v >> 24) & 0xFF);
+        buf[offset + 5] = (byte) ((v >> 16) & 0xFF);
+        buf[offset + 6] = (byte) ((v >>  8) & 0xFF);
+        buf[offset + 7] = (byte) ( v        & 0xFF);
+    }
+
+    /**
+     * Count the distinct values among the first {@code n} deltas.
+     * Static and Canvas-independent for unit testing.
+     *
+     * @param deltas timing deltas
+     * @param n      number of leading entries to consider
+     * @return number of distinct values
+     */
+    public static int countDistinct(long[] deltas, int n) {
+        int distinct = 0;
+        for (int i = 0; i < n; i++) {
+            boolean seen = false;
+            for (int j = 0; j < i; j++) {
+                if (deltas[j] == deltas[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                distinct++;
+            }
+        }
+        return distinct;
     }
 
     /**
      * Whether enough keypresses have been collected.
      *
-     * @return true if count >= REQUIRED_PRESSES
+     * @return true if the session has been accepted
      */
     public boolean isReady() {
         return ready;
@@ -107,7 +170,7 @@ public class EntropyCollector extends Canvas {
     }
 
     /**
-     * Total number of keypresses required.
+     * Number of keypresses normally required.
      *
      * @return REQUIRED_PRESSES
      */
@@ -124,7 +187,11 @@ public class EntropyCollector extends Canvas {
         if (!ready) {
             return null;
         }
-        return mixEntropy(timings);
+        long[] t = new long[count];
+        long[] e = new long[count];
+        System.arraycopy(timings, 0, t, 0, count);
+        System.arraycopy(extras, 0, e, 0, count);
+        return mixEntropy(t, e);
     }
 
     /**
@@ -137,22 +204,28 @@ public class EntropyCollector extends Canvas {
     }
 
     /**
-     * Record a keypress timing delta.
+     * Record a keypress sample.
      * Called by the MIDP framework when the user presses a key.
      *
      * @param keyCode the key that was pressed
      */
     protected void keyPressed(int keyCode) {
-        if (ready) {
+        if (ready || count >= MAX_PRESSES) {
             return;
         }
 
         long now = System.currentTimeMillis();
         timings[count] = now - lastTime;
+        extras[count] = now
+                ^ ((long) keyCode << 32)
+                ^ Runtime.getRuntime().freeMemory()
+                ^ ((long) new Object().hashCode() << 16);
         lastTime = now;
         count++;
 
-        if (count >= REQUIRED_PRESSES) {
+        if (count >= REQUIRED_PRESSES
+                && (countDistinct(timings, count) >= MIN_DISTINCT_DELTAS
+                    || count >= MAX_PRESSES)) {
             ready = true;
             if (listener != null) {
                 listener.onEntropyReady(getEntropy());
@@ -164,7 +237,7 @@ public class EntropyCollector extends Canvas {
 
     /**
      * Draw the entropy collection UI.
-     * Shows a progress message ("Press random keys: 5/32") or
+     * Shows a progress message ("Press random keys: 5/64") or
      * a completion message ("Done!") when ready.
      *
      * @param g the Graphics context to paint on
@@ -181,6 +254,11 @@ public class EntropyCollector extends Canvas {
 
         if (ready) {
             g.drawString("Done!", w / 2, h / 2,
+                Graphics.HCENTER | Graphics.BASELINE);
+        } else if (count >= REQUIRED_PRESSES) {
+            g.drawString("Vary your rhythm!", w / 2, h / 2 - 10,
+                Graphics.HCENTER | Graphics.BASELINE);
+            g.drawString("Keep pressing keys", w / 2, h / 2 + 10,
                 Graphics.HCENTER | Graphics.BASELINE);
         } else {
             g.drawString("Press random keys", w / 2, h / 2 - 10,
