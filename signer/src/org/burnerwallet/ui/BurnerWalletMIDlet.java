@@ -1,5 +1,6 @@
 package org.burnerwallet.ui;
 
+import javax.microedition.lcdui.Displayable;
 import javax.microedition.midlet.MIDlet;
 import javax.microedition.midlet.MIDletStateChangeException;
 
@@ -11,6 +12,7 @@ import org.burnerwallet.chains.bitcoin.PsbtTransaction;
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
 import org.burnerwallet.storage.MidpRecordStoreAdapter;
+import org.burnerwallet.storage.UnlockResult;
 import org.burnerwallet.storage.WalletStore;
 import org.burnerwallet.transport.CameraScanner;
 import org.burnerwallet.transport.ManualEntryScreen;
@@ -21,6 +23,10 @@ import org.burnerwallet.transport.ManualEntryScreen;
  * Wires up the complete lifecycle: onboarding, PIN entry/create/confirm,
  * wallet home, receive address, settings, PSBT signing, and QR display.
  * Implements all listener interfaces to coordinate navigation and storage.
+ *
+ * Every error path shows the message on top of a concrete next screen
+ * (never {@code null}), so a failure inside a command handler can never
+ * take the MIDlet down.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -48,6 +54,13 @@ public class BurnerWalletMIDlet extends MIDlet
     /** PIN from the CREATE step, held until CONFIRM completes. */
     private String pendingPin;
 
+    /** Wallet keys derived for the transaction under review. */
+    private PsbtSigner.WalletKeys pendingKeys;
+
+    /** Canvases with timers/camera that must be released on pause. */
+    private QrDisplayScreen activeQrDisplay;
+    private QrScanScreen activeQrScan;
+
     protected void startApp() throws MIDletStateChangeException {
         if (!initialized) {
             initialized = true;
@@ -63,19 +76,28 @@ public class BurnerWalletMIDlet extends MIDlet
     }
 
     protected void pauseApp() {
+        releaseScreens();
         wipeSensitiveData();
     }
 
     protected void destroyApp(boolean unconditional)
             throws MIDletStateChangeException {
+        releaseScreens();
         wipeSensitiveData();
     }
 
     // ---- Navigation helpers ----
 
+    private Displayable pinEntryScreen() {
+        return new PinScreen(screens, PinScreen.MODE_ENTER, this).getForm();
+    }
+
+    private Displayable homeScreen() {
+        return new WalletHomeScreen(screens, this).getScreen();
+    }
+
     private void showPinEntry() {
-        PinScreen pin = new PinScreen(screens, PinScreen.MODE_ENTER, this);
-        screens.showScreen(pin.getForm());
+        screens.showScreen(pinEntryScreen());
     }
 
     private void showPinCreate() {
@@ -95,8 +117,23 @@ public class BurnerWalletMIDlet extends MIDlet
     }
 
     private void showHome() {
-        WalletHomeScreen home = new WalletHomeScreen(screens, this);
-        screens.showScreen(home.getScreen());
+        screens.showScreen(homeScreen());
+    }
+
+    /** Show an error alert, then the wallet home screen. */
+    private void errorToHome(String message) {
+        screens.showError(message, homeScreen());
+    }
+
+    /** Show an error alert, then the PIN entry screen. */
+    private void errorToPin(String message) {
+        screens.showError(message, pinEntryScreen());
+    }
+
+    /** Show the onboarding welcome screen, then an error alert on top. */
+    private void errorToOnboarding(String message) {
+        showOnboarding();
+        screens.showError(message, null);
     }
 
     // ---- OnboardingListener ----
@@ -115,21 +152,23 @@ public class BurnerWalletMIDlet extends MIDlet
 
     public void onPinEntered(String pin) {
         try {
-            byte[] seed = walletStore.unlock(pin);
-            if (seed != null) {
-                currentSeed = seed;
-                currentPassphrase = walletStore.getPassphrase(pin);
+            UnlockResult result = walletStore.unlockFull(pin);
+            if (result != null) {
+                currentSeed = result.seed;
+                currentPassphrase = result.passphrase;
                 showHome();
+            } else if (!walletStore.walletExists()) {
+                // Attempt limit reached: the store wiped itself
+                wipeSensitiveData();
+                errorToOnboarding("Too many wrong PINs. Wallet wiped.");
             } else {
-                PinScreen pinScreen = new PinScreen(
-                        screens, PinScreen.MODE_ENTER, this);
-                screens.showError("Wrong PIN", pinScreen.getForm());
+                int left = WalletStore.MAX_FAILED_ATTEMPTS
+                        - walletStore.getFailedAttempts();
+                errorToPin("Wrong PIN (" + left + " attempts left)");
             }
         } catch (Exception e) {
-            PinScreen pinScreen = new PinScreen(
-                    screens, PinScreen.MODE_ENTER, this);
-            screens.showError("Unlock failed: " + e.getMessage(),
-                    pinScreen.getForm());
+            errorToPin("Unlock failed: " + e.getMessage()
+                    + ". Use 'Reset wallet' if the store is corrupted.");
         }
     }
 
@@ -143,16 +182,11 @@ public class BurnerWalletMIDlet extends MIDlet
             walletStore.createWallet(
                     currentSeed, currentPassphrase, pin, false);
             pendingPin = null;
-
-            WalletHomeScreen home = new WalletHomeScreen(screens, this);
-            screens.showInfo("Wallet created!", home.getScreen());
+            screens.showInfo("Wallet created!", homeScreen());
         } catch (CryptoError e) {
-            screens.showError("Wallet creation failed: " + e.getMessage(),
-                    null);
-            showOnboarding();
+            errorToOnboarding("Wallet creation failed: " + e.getMessage());
         } catch (Exception e) {
-            screens.showError("Storage error: " + e.getMessage(), null);
-            showOnboarding();
+            errorToOnboarding("Storage error: " + e.getMessage());
         }
     }
 
@@ -162,6 +196,16 @@ public class BurnerWalletMIDlet extends MIDlet
         } else {
             showOnboarding();
         }
+    }
+
+    public void onPinReset() {
+        try {
+            walletStore.wipe();
+        } catch (Exception e) {
+            // Store may already be gone or unreadable; onboarding follows anyway
+        }
+        wipeSensitiveData();
+        showOnboarding();
     }
 
     // ---- HomeListener ----
@@ -175,14 +219,13 @@ public class BurnerWalletMIDlet extends MIDlet
                         screens, this, currentSeed, testnet, index);
                 screens.showScreen(receive.getScreen());
             } catch (Exception e) {
-                screens.showError("Failed to load address: " + e.getMessage(),
-                        null);
-                showHome();
+                errorToHome("Failed to load address: " + e.getMessage());
             }
         } else if (action == WalletHomeScreen.ACTION_SIGN) {
             CameraScanner probe = new CameraScanner();
             if (probe.isAvailable()) {
                 QrScanScreen scan = new QrScanScreen(screens, this);
+                activeQrScan = scan;
                 screens.showScreen(scan.getScreen());
                 scan.startScanning();
             } else {
@@ -197,9 +240,7 @@ public class BurnerWalletMIDlet extends MIDlet
                         screens, this, testnet);
                 screens.showScreen(settings.getScreen());
             } catch (Exception e) {
-                screens.showError(
-                        "Failed to load settings: " + e.getMessage(), null);
-                showHome();
+                errorToHome("Failed to load settings: " + e.getMessage());
             }
         } else if (action == WalletHomeScreen.ACTION_LOCK) {
             wipeSensitiveData();
@@ -219,13 +260,13 @@ public class BurnerWalletMIDlet extends MIDlet
 
     public void onShowQr(String address) {
         try {
-            byte[] payload = address.getBytes("UTF-8");
+            // Plain text QR (no multi-frame header) so any wallet can scan it
             QrDisplayScreen qrScreen = new QrDisplayScreen(
-                    screens, this, payload, "Receive Address");
+                    screens, this, address, "Receive Address");
+            activeQrDisplay = qrScreen;
             screens.showScreen(qrScreen.getScreen());
         } catch (Exception e) {
-            screens.showError("Failed to show QR: " + e.getMessage(), null);
-            showHome();
+            errorToHome("Failed to show QR: " + e.getMessage());
         }
     }
 
@@ -247,13 +288,13 @@ public class BurnerWalletMIDlet extends MIDlet
         try {
             walletStore.wipe();
         } catch (Exception e) {
-            // Wipe failed — continue anyway to clear memory
+            // A failed wipe must not look like success: the old wallet
+            // (and PIN) would still be on the phone.
+            errorToHome("Wipe failed: " + e.getMessage());
+            return;
         }
         wipeSensitiveData();
-
-        OnboardingScreen onboarding = new OnboardingScreen(screens, this);
-        // Build the welcome screen first so showInfo can transition to it
-        onboarding.show();
+        showOnboarding();
     }
 
     public void onSettingsBack() {
@@ -263,10 +304,12 @@ public class BurnerWalletMIDlet extends MIDlet
     // ---- QrScanListener ----
 
     public void onScanComplete(byte[] payload) {
+        activeQrScan = null;
         onPsbtEntered(payload);
     }
 
     public void onScanCancelled() {
+        activeQrScan = null;
         // Fall back to manual entry when scan is cancelled
         ManualEntryScreen entry = new ManualEntryScreen(screens, this);
         screens.showScreen(entry.getScreen());
@@ -275,18 +318,32 @@ public class BurnerWalletMIDlet extends MIDlet
     // ---- ManualEntryListener ----
 
     public void onPsbtEntered(byte[] psbt) {
+        releaseKeys();
         try {
             boolean testnet = walletStore.isTestnet();
             PsbtTransaction tx = PsbtParser.parse(psbt);
+
+            // Enforce the signing policy (SIGHASH_ALL, verified previous
+            // transactions) before anything is shown to the user.
+            PsbtSigner.verifyInputs(tx);
+
+            // Derive the wallet keys once: used to label change outputs
+            // now and to sign after approval.
+            pendingKeys = PsbtSigner.deriveWalletKeys(currentSeed, testnet);
+            boolean[] owned = pendingKeys.ownedOutputs(tx);
+
             TransactionReviewScreen review = new TransactionReviewScreen(
-                    screens, this, tx, testnet);
+                    screens, this, tx, testnet, owned);
             screens.showScreen(review.getScreen());
         } catch (CryptoError e) {
-            screens.showError("PSBT parse error: " + e.getMessage(), null);
-            showHome();
+            releaseKeys();
+            errorToHome("PSBT rejected: " + e.getMessage());
+        } catch (OutOfMemoryError e) {
+            releaseKeys();
+            errorToHome("PSBT too large for this device");
         } catch (Exception e) {
-            screens.showError("Failed to parse PSBT: " + e.getMessage(), null);
-            showHome();
+            releaseKeys();
+            errorToHome("Failed to parse PSBT: " + e.getMessage());
         }
     }
 
@@ -299,36 +356,75 @@ public class BurnerWalletMIDlet extends MIDlet
     public void onApprove(PsbtTransaction psbt) {
         try {
             boolean testnet = walletStore.isTestnet();
-            PsbtSigner.sign(psbt, currentSeed, testnet);
+            if (pendingKeys == null) {
+                pendingKeys = PsbtSigner.deriveWalletKeys(currentSeed, testnet);
+            }
+            int signed = PsbtSigner.sign(psbt, pendingKeys);
+            releaseKeys();
+            if (signed == 0) {
+                throw new CryptoError(CryptoError.ERR_PSBT, "No inputs were signed");
+            }
             byte[] signedBytes = PsbtSerializer.serialize(psbt);
             QrDisplayScreen qrScreen = new QrDisplayScreen(
                     screens, this, signedBytes, "Signed PSBT");
+            activeQrDisplay = qrScreen;
             screens.showScreen(qrScreen.getScreen());
         } catch (CryptoError e) {
-            screens.showError("Signing failed: " + e.getMessage(), null);
-            showHome();
+            errorToHome("Signing failed: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            errorToHome("Signed PSBT too large for QR: " + e.getMessage());
+        } catch (OutOfMemoryError e) {
+            errorToHome("Out of memory while signing");
         } catch (Exception e) {
-            screens.showError("Signing error: " + e.getMessage(), null);
-            showHome();
+            errorToHome("Signing error: " + e.getMessage());
+        } finally {
+            releaseKeys();
         }
     }
 
     public void onReject() {
+        releaseKeys();
         showHome();
     }
 
     // ---- QrDisplayListener ----
 
     public void onQrDisplayDone() {
+        activeQrDisplay = null;
         showHome();
     }
 
     // ---- Security ----
 
     /**
+     * Stop timers and release the camera of any canvas still running.
+     */
+    private void releaseScreens() {
+        if (activeQrDisplay != null) {
+            activeQrDisplay.destroy();
+            activeQrDisplay = null;
+        }
+        if (activeQrScan != null) {
+            activeQrScan.destroy();
+            activeQrScan = null;
+        }
+    }
+
+    /**
+     * Zero the derived signing keys, if any.
+     */
+    private void releaseKeys() {
+        if (pendingKeys != null) {
+            pendingKeys.destroy();
+            pendingKeys = null;
+        }
+    }
+
+    /**
      * Zero-fill all sensitive in-memory data.
      */
     private void wipeSensitiveData() {
+        releaseKeys();
         if (currentSeed != null) {
             ByteArrayUtils.zeroFill(currentSeed);
             currentSeed = null;

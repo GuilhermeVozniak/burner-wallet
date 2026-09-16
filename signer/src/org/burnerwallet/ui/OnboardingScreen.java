@@ -311,8 +311,10 @@ public class OnboardingScreen implements CommandListener, EntropyCollector.Entro
                 showPassphraseScreen();
             } else {
                 clearState();
-                screens.showError("Wrong word. Please start over.", welcomeScreen);
+                // Show the welcome list first, then the alert on top of it;
+                // the reverse order replaces the alert before it is seen.
                 showWelcome();
+                screens.showError("Wrong word. Please start over.", welcomeScreen);
             }
         }
     }
@@ -373,8 +375,8 @@ public class OnboardingScreen implements CommandListener, EntropyCollector.Entro
                     showPassphraseScreen();
                 } else {
                     clearState();
-                    screens.showError("Invalid mnemonic. Check words and try again.", welcomeScreen);
                     showWelcome();
+                    screens.showError("Invalid mnemonic. Check words and try again.", welcomeScreen);
                 }
             }
         }
@@ -389,6 +391,12 @@ public class OnboardingScreen implements CommandListener, EntropyCollector.Entro
             Form form = (Form) d;
             TextField tf = (TextField) form.get(1);
             String passphrase = tf.getString();
+            if (!Bip39Mnemonic.isPassphraseAscii(passphrase)) {
+                // No NFKD normalizer on CLDC: a non-ASCII passphrase would
+                // derive a seed other wallets cannot reproduce.
+                screens.showError("Passphrase must use only printable ASCII characters", d);
+                return;
+            }
             listener.onOnboardingComplete(mnemonic, passphrase);
         }
     }

@@ -120,6 +120,150 @@ public class WalletStoreTest {
     }
 
     @Test
+    public void unlockFullReturnsSeedAndPassphrase() throws Exception {
+        store.createWallet(testSeed, "hunter2", PIN, true);
+        UnlockResult r = store.unlockFull(PIN);
+        assertNotNull(r);
+        assertArrayEquals(testSeed, r.seed);
+        assertEquals("hunter2", r.passphrase);
+        assertNull(store.unlockFull(WRONG_PIN));
+    }
+
+    @Test
+    public void tamperedCiphertextFailsClosed() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+
+        // Flip one bit inside the ciphertext (would silently change the seed
+        // under plain CBC; the MAC must catch it)
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob = raw.getRecord(WalletStore.RECORD_SEED);
+        blob[WalletData.HEADER_SIZE + 5] ^= 0x01;
+        raw.setRecord(WalletStore.RECORD_SEED, blob);
+        raw.close();
+
+        assertNull("tampered blob must not unlock", store.unlock(PIN));
+        assertFalse(store.verifyPin(PIN));
+    }
+
+    @Test
+    public void tamperedMacFailsClosed() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob = raw.getRecord(WalletStore.RECORD_SEED);
+        blob[blob.length - 1] ^= 0x80;
+        raw.setRecord(WalletStore.RECORD_SEED, blob);
+        raw.close();
+
+        assertNull(store.unlock(PIN));
+    }
+
+    @Test
+    public void corruptedIterationCountIsReportedNotHung() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob = raw.getRecord(WalletStore.RECORD_SEED);
+        blob[33] = 0x7F; // iterations = 0x7F00xxxx
+        raw.setRecord(WalletStore.RECORD_SEED, blob);
+        raw.close();
+
+        try {
+            store.unlock(PIN);
+            fail("corrupted record must throw, not spin for years");
+        } catch (Exception e) {
+            assertTrue(e.getMessage(), e.getMessage().indexOf("corrupted") >= 0);
+        }
+    }
+
+    @Test
+    public void saltAndIvAreNotDerivedFromPin() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob1 = raw.getRecord(WalletStore.RECORD_SEED);
+        raw.close();
+
+        Thread.sleep(2);
+        WalletStore store2 = new WalletStore(new InMemoryRecordStoreAdapter());
+        store2.createWallet(testSeed, "", PIN, false);
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob2 = raw.getRecord(WalletStore.RECORD_SEED);
+        raw.close();
+
+        assertFalse("same seed+PIN must not reuse the salt",
+            java.util.Arrays.equals(WalletData.getSalt(blob1), WalletData.getSalt(blob2)));
+        assertFalse("same seed+PIN must not reuse the IV",
+            java.util.Arrays.equals(WalletData.getIv(blob1), WalletData.getIv(blob2)));
+    }
+
+    @Test
+    public void createWalletWithEntropyIsDeterministic() throws Exception {
+        byte[] salt = new byte[16];
+        byte[] iv = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            salt[i] = (byte) (i * 7);
+            iv[i] = (byte) (i * 11);
+        }
+        store.createWalletWithEntropy(testSeed, "", PIN, false, salt, iv);
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob1 = raw.getRecord(WalletStore.RECORD_SEED);
+        raw.close();
+
+        store.createWalletWithEntropy(testSeed, "", PIN, false, salt, iv);
+        raw.open(WalletStore.STORE_NAME, false);
+        byte[] blob2 = raw.getRecord(WalletStore.RECORD_SEED);
+        raw.close();
+
+        assertArrayEquals(blob1, blob2);
+        assertArrayEquals(salt, WalletData.getSalt(blob1));
+        assertArrayEquals(iv, WalletData.getIv(blob1));
+        assertArrayEquals(testSeed, store.unlock(PIN));
+    }
+
+    @Test
+    public void failedAttemptsCountAndResetOnSuccess() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+        assertEquals(0, store.getFailedAttempts());
+
+        assertNull(store.unlock(WRONG_PIN));
+        assertNull(store.unlock(WRONG_PIN));
+        assertEquals(2, store.getFailedAttempts());
+
+        assertNotNull(store.unlock(PIN));
+        assertEquals(0, store.getFailedAttempts());
+    }
+
+    @Test
+    public void tooManyWrongPinsWipeWallet() throws Exception {
+        store.createWallet(testSeed, "", PIN, false);
+        for (int i = 0; i < WalletStore.MAX_FAILED_ATTEMPTS - 1; i++) {
+            assertNull(store.unlock(WRONG_PIN));
+            assertTrue("wallet must survive attempt " + (i + 1), store.walletExists());
+        }
+        assertNull(store.unlock(WRONG_PIN));
+        assertFalse("wallet must be wiped at the attempt limit", store.walletExists());
+    }
+
+    @Test
+    public void recreateReplacesStaleStore() throws Exception {
+        // Simulate a partial earlier creation: a store with a single record
+        InMemoryRecordStoreAdapter raw = new InMemoryRecordStoreAdapter();
+        raw.open(WalletStore.STORE_NAME, true);
+        raw.addRecord(new byte[] { 1, 2, 3 });
+        raw.close();
+        assertFalse(store.walletExists());
+
+        store.createWallet(testSeed, "", PIN, false);
+        assertTrue(store.walletExists());
+        assertArrayEquals(testSeed, store.unlock(PIN));
+    }
+
+    @Test
     public void crossImplRoundTrip() throws Exception {
         // BIP39 "abandon" mnemonic (first 11 words "abandon", last word "about")
         String mnemonic = "abandon abandon abandon abandon abandon abandon "
