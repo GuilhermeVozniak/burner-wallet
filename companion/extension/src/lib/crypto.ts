@@ -19,9 +19,20 @@ export function generateMnemonic(wordCount: 12 | 24 = 12): string {
   return bip39.generateMnemonic(strength);
 }
 
+/**
+ * Normalize a user-entered mnemonic: lowercase, collapse all whitespace
+ * (newlines, tabs, double spaces) to single spaces, trim.
+ *
+ * BIP39 seed derivation hashes the exact phrase string, so a stray newline
+ * or double space would silently produce a different wallet.
+ */
+export function normalizeMnemonic(phrase: string): string {
+  return phrase.trim().toLowerCase().split(/\s+/).join(" ");
+}
+
 /** Validate a BIP39 mnemonic phrase. */
 export function validateMnemonic(phrase: string): boolean {
-  return bip39.validateMnemonic(phrase.trim());
+  return bip39.validateMnemonic(normalizeMnemonic(phrase));
 }
 
 /** Derive a 64-byte seed from a mnemonic and optional passphrase. */
@@ -29,7 +40,7 @@ export async function mnemonicToSeed(
   phrase: string,
   passphrase: string = ""
 ): Promise<Uint8Array> {
-  const buf = await bip39.mnemonicToSeed(phrase.trim(), passphrase);
+  const buf = await bip39.mnemonicToSeed(normalizeMnemonic(phrase), passphrase);
   return new Uint8Array(buf);
 }
 

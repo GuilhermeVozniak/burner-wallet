@@ -10,6 +10,7 @@
 import {
   generateMnemonic,
   validateMnemonic,
+  normalizeMnemonic,
   mnemonicToSeed,
   deriveAddress,
   fetchBalance,
@@ -35,12 +36,19 @@ function $(id: string): HTMLElement {
   return el;
 }
 
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
 function showStatus(msg: string, type: "error" | "success" | "info"): void {
   const bar = $("status-bar");
   bar.textContent = msg;
   bar.className = type;
   bar.classList.remove("hidden");
-  setTimeout(() => bar.classList.add("hidden"), 4000);
+  // Reset the hide timer so an earlier message cannot hide a newer one early.
+  if (statusTimer !== null) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    bar.classList.add("hidden");
+    statusTimer = null;
+  }, 4000);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +188,7 @@ async function onGenerate(): Promise<void> {
 }
 
 async function onImport(): Promise<void> {
-  const input = ($("import-input") as HTMLTextAreaElement).value.trim();
+  const input = normalizeMnemonic(($("import-input") as HTMLTextAreaElement).value);
   if (!input) {
     showStatus("Enter a mnemonic phrase", "error");
     return;
