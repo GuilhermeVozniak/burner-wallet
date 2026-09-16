@@ -11,8 +11,10 @@ signer/preprocessed/
 signer/preverified/
 
 # === Rust / Companion Core + TUI ===
+# Cargo.lock files ARE tracked: the TUI binary and the wasm/napi cdylibs are
+# release artifacts and must build reproducibly from pinned dependency
+# versions (CI and release builds use --locked).
 target/
-Cargo.lock
 *.rlib
 *.rmeta
 
@@ -81,9 +83,15 @@ tools/cratedocs-mcp/
 # === Signer libs — tracked in git for CI reproducibility ===
 # All JARs in signer/lib/ are whitelisted above (!signer/lib/*.jar)
 
+# === FreeJ2ME-Plus emulator runtime state (created by `make emulator`) ===
+freej2me_system/
+rms/
+logs/
+
 # === Claude Code ===
 .claude/settings.local.json
 .claude/CLAUDE.local.md
+.claude/worktrees/
 
 # === Misc ===
 *.log

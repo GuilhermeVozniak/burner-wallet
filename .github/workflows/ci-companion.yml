@@ -26,7 +26,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
 
+      # --locked: Cargo.lock is committed; fail if it is out of date so
+      # dependency changes are always explicit and builds are reproducible.
       - name: Check formatting (core)
         working-directory: companion/core
         run: cargo fmt -- --check
@@ -37,23 +40,47 @@ jobs:
 
       - name: Clippy (core)
         working-directory: companion/core
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Clippy (tui)
         working-directory: companion/tui
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test core
         working-directory: companion/core
-        run: cargo test
+        run: cargo test --locked
 
       - name: Test TUI
         working-directory: companion/tui
-        run: cargo test
+        run: cargo test --locked
+
+      - name: Check formatting (wasm)
+        working-directory: companion/core-wasm
+        run: cargo fmt -- --check
+
+      - name: Check formatting (napi)
+        working-directory: companion/core-napi
+        run: cargo fmt -- --check
+
+      - name: Clippy (wasm)
+        working-directory: companion/core-wasm
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Clippy (napi)
+        working-directory: companion/core-napi
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test WASM bridge (native)
         working-directory: companion/core-wasm
-        run: cargo test
+        run: cargo test --locked
+
+      - name: Check WASM bridge compiles for wasm32
+        working-directory: companion/core-wasm
+        run: cargo check --locked --target wasm32-unknown-unknown
+
+      - name: Build napi bridge
+        working-directory: companion/core-napi
+        run: cargo build --locked
 
   web:
     name: Web (Next.js)
