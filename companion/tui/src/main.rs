@@ -3,8 +3,9 @@
 //! transaction broadcasting via a ratatui-based terminal UI.
 
 use std::io;
+use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -24,35 +25,81 @@ use burner_companion_tui::ui;
     about = "Burner Wallet companion TUI -- air-gapped Bitcoin wallet companion"
 )]
 struct Cli {
-    /// Bitcoin network: mainnet, testnet, signet
-    #[arg(long, default_value = "testnet")]
-    network: String,
+    /// Bitcoin network
+    #[arg(long, value_enum, default_value_t = NetworkArg::Testnet)]
+    network: NetworkArg,
 
-    /// BIP39 mnemonic phrase (12 or 24 words, quoted)
-    #[arg(long)]
-    mnemonic: Option<String>,
+    /// Path to a file containing the BIP39 mnemonic phrase (12 or 24 words).
+    ///
+    /// The phrase is read from a file rather than the command line so it
+    /// never appears in shell history or `ps` output. Development aid only;
+    /// prefer importing interactively.
+    #[arg(long, value_name = "PATH")]
+    mnemonic_file: Option<PathBuf>,
 
     /// Esplora server URL (default per network)
     #[arg(long)]
     esplora: Option<String>,
 }
 
+/// Networks accepted on the command line. Unknown values are rejected by
+/// clap instead of silently falling back to testnet.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum NetworkArg {
+    Mainnet,
+    Testnet,
+    Signet,
+    Regtest,
+}
+
+impl From<NetworkArg> for Network {
+    fn from(n: NetworkArg) -> Self {
+        match n {
+            NetworkArg::Mainnet => Network::Bitcoin,
+            NetworkArg::Testnet => Network::Testnet,
+            NetworkArg::Signet => Network::Signet,
+            NetworkArg::Regtest => Network::Regtest,
+        }
+    }
+}
+
+/// Put the terminal back into a usable state (raw mode off, main screen).
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+}
+
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
-    let network = match cli.network.as_str() {
-        "mainnet" => Network::Bitcoin,
-        "signet" => Network::Signet,
-        _ => Network::Testnet,
-    };
+    let network: Network = cli.network.into();
 
     let esplora_url = cli.esplora.unwrap_or_else(|| match network {
         Network::Bitcoin => String::from("https://mempool.space/api"),
         Network::Signet => String::from("https://mempool.space/signet/api"),
+        Network::Regtest => String::from("http://127.0.0.1:3002"),
         _ => String::from("https://mempool.space/testnet/api"),
     });
 
-    let mut app = App::new(network, esplora_url, cli.mnemonic.as_deref());
+    let mnemonic = match cli.mnemonic_file {
+        Some(path) => Some(std::fs::read_to_string(&path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("cannot read mnemonic file {}: {}", path.display(), e),
+            )
+        })?),
+        None => None,
+    };
+
+    let mut app = App::new(network, esplora_url, mnemonic.as_deref().map(str::trim));
+
+    // A panic anywhere (BDK, ratatui, crossterm) must not leave the shell
+    // in raw mode on the alternate screen.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        default_hook(info);
+    }));
 
     // Setup terminal
     enable_raw_mode()?;
@@ -65,8 +112,7 @@ fn main() -> io::Result<()> {
     let result = run_app(&mut terminal, &mut app);
 
     // Restore terminal
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    restore_terminal();
     terminal.show_cursor()?;
 
     if let Err(e) = result {

@@ -62,7 +62,7 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
     ];
 
-    if app.mnemonic_phrase.is_some() {
+    if app.bdk_wallet.is_some() {
         lines.push(Line::from(Span::styled(
             "  Wallet initialized. Loading...",
             Style::default().fg(Color::Green),
@@ -87,9 +87,11 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
         )));
 
         if !app.input_buffer.is_empty() {
+            // Never echo the mnemonic: show progress only.
+            let words = app.input_buffer.split_whitespace().count();
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                format!("  > {}_", app.input_buffer),
+                format!("  > {} word(s) entered (hidden)_", words),
                 Style::default().fg(Color::Yellow),
             )));
         }
@@ -101,11 +103,14 @@ fn draw_welcome(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_wallet(f: &mut Frame, app: &App, area: Rect) {
-    let mnemonic_display = app
-        .mnemonic_phrase
-        .as_ref()
-        .map(|m| m.to_string())
-        .unwrap_or_else(|| String::from("(none)"));
+    let fingerprint_display = if app.wallet_fingerprint.is_empty() {
+        String::from("(none)")
+    } else {
+        format!(
+            "{} (watch-only, keys stay on the signer)",
+            app.wallet_fingerprint
+        )
+    };
 
     let balance_display = if app.synced {
         format!("{} sats", app.balance_sats)
@@ -136,7 +141,7 @@ fn draw_wallet(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Mnemonic: {}", mnemonic_display),
+            format!("  Fingerprint: {}", fingerprint_display),
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
@@ -347,6 +352,27 @@ fn draw_send_display(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::White),
         )),
         Line::from(""),
+        Line::from(vec![
+            Span::styled("  To: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&app.send_recipient, Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Amount: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} sats", app.send_amount),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled("   Fee: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} sats", app.send_fee_sats),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("   Change: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} sats", app.send_change_sats),
+                Style::default().fg(Color::White),
+            ),
+        ]),
         Line::from(Span::styled(
             format!("  Length: {} bytes", app.send_psbt_hex.len() / 2),
             Style::default().fg(Color::DarkGray),
@@ -362,7 +388,7 @@ fn draw_send_display(f: &mut Frame, app: &App, area: Rect) {
     let inner_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10), // header
+            Constraint::Length(12), // header
             Constraint::Min(4),     // psbt hex
             Constraint::Length(2),  // footer
         ])
@@ -432,16 +458,39 @@ fn draw_receive_confirm(f: &mut Frame, app: &App, area: Rect) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "  Transaction is finalized and ready to broadcast.",
+            "  Signatures verified. Review before broadcasting:",
             Style::default().fg(Color::Green),
         )),
         Line::from(""),
-        Line::from(Span::styled(
-            format!("  TX hex length: {} bytes", app.receive_tx_hex.len() / 2),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(""),
     ];
+
+    for out in &app.receive_outputs {
+        let (label, color) = if out.is_mine {
+            ("  Change:    ", Color::DarkGray)
+        } else {
+            ("  Pays:      ", Color::Yellow)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(label, Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} sats  ", out.sats),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled(out.address.clone(), Style::default().fg(color)),
+        ]));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("  Fee:       ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{} sats", app.receive_fee_sats),
+            Style::default().fg(Color::White),
+        ),
+    ]));
+    lines.push(Line::from(Span::styled(
+        format!("  TX size:   {} bytes", app.receive_tx_hex.len() / 2),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
 
     if !app.receive_txid.is_empty() {
         lines.push(Line::from(Span::styled(
