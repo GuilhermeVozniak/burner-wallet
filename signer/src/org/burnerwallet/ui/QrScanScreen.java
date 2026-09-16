@@ -24,7 +24,7 @@ import org.burnerwallet.transport.QrDecoder;
  * {@link MultiFrameDecoder} and shows progress ("Frame 2/3 received").
  *
  * Falls back to manual entry if the camera is not available or
- * the user selects the "Enter Manually" command.
+ * the user selects the "Manual" command.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -76,7 +76,8 @@ public class QrScanScreen extends Canvas implements CommandListener {
         this.decoder = new MultiFrameDecoder();
         this.statusMessage = "Starting camera...";
 
-        manualCmd = new Command("Enter Manually", Command.SCREEN, 1);
+        // Short label: a 128 px command bar cannot fit "Enter Manually" next to "Cancel"
+        manualCmd = new Command("Manual", Command.SCREEN, 1);
         cancelCmd = new Command("Cancel", Command.BACK, 2);
         addCommand(manualCmd);
         addCommand(cancelCmd);
@@ -99,7 +100,7 @@ public class QrScanScreen extends Canvas implements CommandListener {
     public void startScanning() {
         if (!camera.isAvailable()) {
             errorMessage = "Camera not available";
-            statusMessage = "Use Enter Manually";
+            statusMessage = "Use Manual";
             repaint();
             return;
         }
@@ -125,7 +126,7 @@ public class QrScanScreen extends Canvas implements CommandListener {
             startScanTimer();
         } catch (Exception e) {
             errorMessage = "Camera error: " + e.getMessage();
-            statusMessage = "Use Enter Manually";
+            statusMessage = "Use Manual";
         }
         repaint();
     }
@@ -139,6 +140,62 @@ public class QrScanScreen extends Canvas implements CommandListener {
             camera.stopCamera();
             cameraStarted = false;
         }
+    }
+
+    /**
+     * Release the camera when the canvas is hidden (incoming call, pause);
+     * a leaked Player would make the next scan fail with "device busy".
+     */
+    protected void hideNotify() {
+        destroy();
+    }
+
+    /**
+     * Greedy word wrap for a proportional font. Words wider than the line
+     * are split by character so nothing is ever drawn off-screen.
+     */
+    private static String[] wrapText(String text, Font font, int maxWidth) {
+        java.util.Vector lines = new java.util.Vector();
+        StringBuffer line = new StringBuffer();
+        int start = 0;
+        int len = text.length();
+        while (start < len) {
+            int end = text.indexOf(' ', start);
+            if (end < 0) {
+                end = len;
+            }
+            String word = text.substring(start, end);
+            start = end + 1;
+            if (word.length() == 0) {
+                continue;
+            }
+            String candidate = line.length() == 0 ? word : line + " " + word;
+            if (font.stringWidth(candidate) <= maxWidth) {
+                line.setLength(0);
+                line.append(candidate);
+                continue;
+            }
+            if (line.length() > 0) {
+                lines.addElement(line.toString());
+                line.setLength(0);
+            }
+            // Word alone is too wide: split it by characters
+            while (font.stringWidth(word) > maxWidth && word.length() > 1) {
+                int cut = word.length() - 1;
+                while (cut > 1 && font.stringWidth(word.substring(0, cut)) > maxWidth) {
+                    cut--;
+                }
+                lines.addElement(word.substring(0, cut));
+                word = word.substring(cut);
+            }
+            line.append(word);
+        }
+        if (line.length() > 0) {
+            lines.addElement(line.toString());
+        }
+        String[] out = new String[lines.size()];
+        lines.copyInto(out);
+        return out;
     }
 
     protected void paint(Graphics g) {
@@ -157,23 +214,34 @@ public class QrScanScreen extends Canvas implements CommandListener {
                 Font.SIZE_SMALL);
         g.setFont(font);
 
-        int yPos = h - font.getHeight() * 3;
+        // Messages are word-wrapped to the screen width and stacked upward
+        // from the bottom so long camera errors stay readable on 128 px.
+        int lineHeight = font.getHeight() + 2;
+        String[] errorLines = errorMessage == null
+                ? new String[0] : wrapText(errorMessage, font, w - 4);
+        String[] statusLines = statusMessage == null
+                ? new String[0] : wrapText(statusMessage, font, w - 4);
+        int yPos = h - lineHeight * (errorLines.length + statusLines.length) - 2;
+        if (yPos < 0) {
+            yPos = 0;
+        }
 
         // Error message in red
-        if (errorMessage != null) {
-            g.setColor(0xFF0000);
-            int ew = font.stringWidth(errorMessage);
-            g.drawString(errorMessage, (w - ew) / 2, yPos,
+        g.setColor(0xFF0000);
+        for (int i = 0; i < errorLines.length; i++) {
+            int ew = font.stringWidth(errorLines[i]);
+            g.drawString(errorLines[i], (w - ew) / 2, yPos,
                     Graphics.TOP | Graphics.LEFT);
-            yPos += font.getHeight() + 2;
+            yPos += lineHeight;
         }
 
         // Status message in white
-        if (statusMessage != null) {
-            g.setColor(0xFFFFFF);
-            int sw = font.stringWidth(statusMessage);
-            g.drawString(statusMessage, (w - sw) / 2, yPos,
+        g.setColor(0xFFFFFF);
+        for (int i = 0; i < statusLines.length; i++) {
+            int sw = font.stringWidth(statusLines[i]);
+            g.drawString(statusLines[i], (w - sw) / 2, yPos,
                     Graphics.TOP | Graphics.LEFT);
+            yPos += lineHeight;
         }
 
         // Progress indicator
@@ -252,7 +320,9 @@ public class QrScanScreen extends Canvas implements CommandListener {
                 decoder.addFrame(decoded);
                 if (decoder.isComplete()) {
                     byte[] payload = decoder.assemble();
-                    stopScanTimer();
+                    // Release camera + timer before handing off, otherwise
+                    // the Player stays open during review.
+                    destroy();
                     listener.onScanComplete(payload);
                     return;
                 }
@@ -261,7 +331,10 @@ public class QrScanScreen extends Canvas implements CommandListener {
                         + "/" + decoder.getTotalCount() + " received";
                 repaint();
 
-            } catch (Exception e) {
+            } catch (Throwable t) {
+                // Includes OutOfMemoryError from a large snapshot: an Error
+                // escaping here would kill the Timer thread and leave the
+                // screen stuck on "Scanning...".
                 statusMessage = "Scan error";
                 repaint();
             }

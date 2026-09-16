@@ -12,13 +12,19 @@ import org.burnerwallet.chains.bitcoin.TxOutput;
 import org.burnerwallet.core.Bech32;
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
+import org.burnerwallet.core.HexCodec;
 
 /**
  * Transaction review screen that displays PSBT details before signing.
  *
- * Shows send amount, recipient address, fee (with percentage), and
- * warnings for high fees or multiple recipients. The user can approve
- * ("Sign") or reject ("Reject") the transaction.
+ * Shows the amount leaving the wallet, every output with its own amount
+ * (change back to this wallet is labelled as such and excluded from the
+ * send total), the fee with percentage, and warnings for high fees,
+ * multiple external recipients, unknown output scripts and unknown input
+ * values. The user can approve ("Sign") or reject ("Reject").
+ *
+ * The caller is expected to have run {@code PsbtSigner.verifyInputs} so
+ * the input amounts shown here are the verified ones.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -54,6 +60,7 @@ public class TransactionReviewScreen implements CommandListener {
     private final TransactionReviewListener listener;
     private final PsbtTransaction psbt;
     private final boolean testnet;
+    private final boolean[] ownedOutputs;
 
     private Form form;
     private final Command signCmd;
@@ -62,18 +69,22 @@ public class TransactionReviewScreen implements CommandListener {
     /**
      * Create a new TransactionReviewScreen.
      *
-     * @param screens  the screen manager for display control
-     * @param listener callback for review events
-     * @param psbt     the parsed PSBT transaction to review
-     * @param testnet  true for testnet, false for mainnet
+     * @param screens      the screen manager for display control
+     * @param listener     callback for review events
+     * @param psbt         the parsed PSBT transaction to review
+     * @param testnet      true for testnet, false for mainnet
+     * @param ownedOutputs one flag per output: true if it pays back to
+     *                     this wallet (change); null if unknown
      */
     public TransactionReviewScreen(ScreenManager screens,
                                    TransactionReviewListener listener,
-                                   PsbtTransaction psbt, boolean testnet) {
+                                   PsbtTransaction psbt, boolean testnet,
+                                   boolean[] ownedOutputs) {
         this.screens = screens;
         this.listener = listener;
         this.psbt = psbt;
         this.testnet = testnet;
+        this.ownedOutputs = ownedOutputs;
 
         signCmd = new Command("Sign", Command.OK, 1);
         rejectCmd = new Command("Reject", Command.BACK, 2);
@@ -87,38 +98,56 @@ public class TransactionReviewScreen implements CommandListener {
     private void buildForm() {
         form = new Form("Review TX");
 
-        long totalOutput = psbt.getTotalOutputValue();
-        long fee = psbt.getFee();
-        long totalInput = psbt.getTotalInputValue();
-
-        // Send amount (total output)
-        form.append(new StringItem("Send:", formatBtc(totalOutput) + " BTC"));
-
-        // Recipient address(es)
         TxOutput[] outputs = psbt.unsignedTx.outputs;
+        boolean inputsKnown = psbt.allInputsHaveWitnessUtxo();
+        long totalInput = psbt.getTotalInputValue();
+        long totalOutput = psbt.getTotalOutputValue();
+        long fee = totalInput - totalOutput;
+        long sendAmount = sumExternalOutputs(outputs, ownedOutputs);
+
+        // Amount leaving the wallet (excludes change)
+        form.append(new StringItem("Send:", formatBtc(sendAmount) + " BTC"));
+
+        // Every output with its own amount
+        boolean unknownScript = false;
         for (int i = 0; i < outputs.length; i++) {
+            boolean owned = ownedOutputs != null && i < ownedOutputs.length
+                    && ownedOutputs[i];
+            String label = owned ? "Change:" : "To:";
+            String amount = formatBtc(outputs[i].value) + " BTC";
             try {
                 String addr = addressFromScript(outputs[i].scriptPubKey, testnet);
-                form.append(new StringItem("To:", formatAddress(addr)));
+                form.append(new StringItem(label, amount + "\n" + formatAddress(addr)));
             } catch (CryptoError e) {
-                form.append(new StringItem("To:", "(unknown script)"));
+                unknownScript = true;
+                form.append(new StringItem(label, amount + "\nUNKNOWN SCRIPT\n"
+                        + HexCodec.encode(outputs[i].scriptPubKey)));
             }
         }
 
         // Fee display with percentage
-        String feeDisplay = formatBtc(fee) + " BTC";
-        if (totalInput > 0) {
-            long pct = (fee * 100) / totalInput;
-            feeDisplay = feeDisplay + " (" + pct + "%)";
+        if (inputsKnown) {
+            String feeDisplay = formatBtc(fee) + " BTC";
+            if (totalInput > 0 && fee >= 0) {
+                feeDisplay = feeDisplay + " (" + formatFeePercent(totalInput, fee) + ")";
+            }
+            form.append(new StringItem("Fee:", feeDisplay));
+        } else {
+            form.append(new StringItem("Fee:", "UNKNOWN"));
         }
-        form.append(new StringItem("Fee:", feeDisplay));
 
         // Warnings
-        if (isHighFee(totalInput, fee)) {
+        if (!inputsKnown) {
+            form.append(new StringItem("WARNING:", "Input value unknown!"));
+        }
+        if (inputsKnown && isHighFee(totalInput, fee)) {
             form.append(new StringItem("WARNING:", "Fee >= 10% of input!"));
         }
-        if (hasMultipleRecipients(outputs, null)) {
+        if (hasMultipleRecipients(outputs, ownedOutputs)) {
             form.append(new StringItem("WARNING:", "Multiple recipients"));
+        }
+        if (unknownScript) {
+            form.append(new StringItem("WARNING:", "Unknown output type"));
         }
 
         form.addCommand(signCmd);
@@ -149,19 +178,23 @@ public class TransactionReviewScreen implements CommandListener {
 
     /**
      * Format satoshis as a BTC string using integer-only arithmetic.
-     * No floating point is used.
+     * No floating point is used. Negative values get a leading '-'.
      *
-     * Examples: 100000 -> "0.001", 100000000 -> "1.0", 1000 -> "0.00001", 0 -> "0.0"
+     * Examples: 100000 -> "0.001", 100000000 -> "1.0", 1000 -> "0.00001",
+     * 0 -> "0.0", -50000 -> "-0.0005"
      *
-     * @param sats amount in satoshis (non-negative)
+     * @param sats amount in satoshis
      * @return BTC-formatted string
      */
     public static String formatBtc(long sats) {
-        long wholePart = sats / SATS_PER_BTC;
-        long fracPart = sats % SATS_PER_BTC;
+        boolean negative = sats < 0;
+        long abs = negative ? -sats : sats;
+        long wholePart = abs / SATS_PER_BTC;
+        long fracPart = abs % SATS_PER_BTC;
+        String sign = negative ? "-" : "";
 
         if (fracPart == 0) {
-            return String.valueOf(wholePart) + ".0";
+            return sign + String.valueOf(wholePart) + ".0";
         }
 
         // Build fractional part with leading zeros, then strip trailing zeros
@@ -182,7 +215,32 @@ public class TransactionReviewScreen implements CommandListener {
             lastNonZero--;
         }
 
-        return String.valueOf(wholePart) + "." + fullFrac.substring(0, lastNonZero + 1);
+        return sign + String.valueOf(wholePart) + "."
+                + fullFrac.substring(0, lastNonZero + 1);
+    }
+
+    /**
+     * Format the fee as a percentage of the total input with one decimal,
+     * using integer arithmetic only. Sub-0.1% fees show as "<0.1%" rather
+     * than a misleading "0%".
+     *
+     * Examples: (200000, 1000) -> "0.5%", (100000, 10000) -> "10.0%",
+     * (1000000, 10) -> "<0.1%", (1000, 0) -> "0.0%"
+     *
+     * @param totalInput total input value in satoshis (must be > 0)
+     * @param fee        fee in satoshis (must be >= 0)
+     * @return percentage string with a trailing '%'
+     */
+    public static String formatFeePercent(long totalInput, long fee) {
+        if (totalInput <= 0 || fee < 0) {
+            return "?%";
+        }
+        // Tenths of a percent; fee * 1000 cannot overflow for any real amount
+        long tenths = (fee * 1000) / totalInput;
+        if (tenths == 0 && fee > 0) {
+            return "<0.1%";
+        }
+        return (tenths / 10) + "." + (tenths % 10) + "%";
     }
 
     /**
@@ -193,28 +251,46 @@ public class TransactionReviewScreen implements CommandListener {
      * @return true if fee >= 10% of totalInput
      */
     public static boolean isHighFee(long totalInput, long fee) {
-        if (totalInput <= 0) {
+        if (totalInput <= 0 || fee < 0) {
             return false;
         }
-        // fee >= totalInput / 10  (avoids floating point)
-        // Equivalent to: fee * 10 >= totalInput (but watch for overflow)
-        // Use: fee >= totalInput / 10
-        return fee * 10 >= totalInput;
+        // fee >= totalInput / 10 without floating point or overflow
+        return fee >= totalInput / 10;
     }
 
     /**
-     * Check if there are multiple non-change recipients.
+     * Sum of outputs that leave the wallet (not flagged as owned).
      *
-     * @param outputs        transaction outputs
-     * @param changePubKeyHash 20-byte pubkey hash of the change address, or null
-     *                         if no change identification is available
-     * @return true if 2 or more outputs are not change
+     * @param outputs      transaction outputs
+     * @param ownedOutputs per-output ownership flags, or null for none owned
+     * @return satoshis sent to external recipients
+     */
+    public static long sumExternalOutputs(TxOutput[] outputs, boolean[] ownedOutputs) {
+        long total = 0;
+        for (int i = 0; i < outputs.length; i++) {
+            boolean owned = ownedOutputs != null && i < ownedOutputs.length
+                    && ownedOutputs[i];
+            if (!owned) {
+                total += outputs[i].value;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Check if there are multiple external (non-owned) recipients.
+     *
+     * @param outputs      transaction outputs
+     * @param ownedOutputs per-output ownership flags, or null for none owned
+     * @return true if 2 or more outputs are not owned by this wallet
      */
     public static boolean hasMultipleRecipients(TxOutput[] outputs,
-                                                 byte[] changePubKeyHash) {
+                                                 boolean[] ownedOutputs) {
         int recipientCount = 0;
         for (int i = 0; i < outputs.length; i++) {
-            if (isChangeOutput(outputs[i], changePubKeyHash)) {
+            boolean owned = ownedOutputs != null && i < ownedOutputs.length
+                    && ownedOutputs[i];
+            if (owned) {
                 continue;
             }
             recipientCount++;
@@ -260,25 +336,6 @@ public class TransactionReviewScreen implements CommandListener {
     }
 
     // ---- Private helpers ----
-
-    /**
-     * Check if an output is a change output by comparing its scriptPubKey
-     * against the known change pubkey hash.
-     */
-    private static boolean isChangeOutput(TxOutput output,
-                                           byte[] changePubKeyHash) {
-        if (changePubKeyHash == null || output.scriptPubKey == null) {
-            return false;
-        }
-        // P2WPKH change: 0x00 0x14 <20-byte-hash>
-        if (output.scriptPubKey.length == 22
-                && output.scriptPubKey[0] == 0x00
-                && output.scriptPubKey[1] == 0x14) {
-            byte[] hash = ByteArrayUtils.copyOfRange(output.scriptPubKey, 2, 22);
-            return ByteArrayUtils.constantTimeEquals(hash, changePubKeyHash);
-        }
-        return false;
-    }
 
     /**
      * Format a bech32 address for display on a 128px Nokia screen.
