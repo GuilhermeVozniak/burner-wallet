@@ -19,11 +19,21 @@ public class ScreenManager {
         display.setCurrent(screen);
     }
 
+    /**
+     * Show an alert, then continue to {@code next}. If {@code next} is null
+     * the alert returns to the previously current screen. (MIDP throws
+     * NullPointerException from {@code setCurrent(alert, null)}, which would
+     * kill the MIDlet from inside an error handler.)
+     */
     public void showAlert(String title, String message, AlertType type,
                           Displayable next, int timeoutMs) {
         Alert alert = new Alert(title, message, null, type);
         alert.setTimeout(timeoutMs);
-        display.setCurrent(alert, next);
+        if (next == null) {
+            display.setCurrent(alert);
+        } else {
+            display.setCurrent(alert, next);
+        }
     }
 
     public void showError(String message, Displayable returnTo) {
@@ -38,7 +48,11 @@ public class ScreenManager {
                                 Displayable next) {
         Alert alert = new Alert(title, message, null, type);
         alert.setTimeout(Alert.FOREVER);
-        display.setCurrent(alert, next);
+        if (next == null) {
+            display.setCurrent(alert);
+        } else {
+            display.setCurrent(alert, next);
+        }
     }
 
     public Display getDisplay() { return display; }

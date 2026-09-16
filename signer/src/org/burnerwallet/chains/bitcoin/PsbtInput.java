@@ -33,4 +33,11 @@ public class PsbtInput {
 
     /** DER-encoded partial signature value; null if not present. */
     public byte[] partialSigValue;
+
+    /**
+     * Key/value pairs this signer does not interpret (including partial
+     * signatures and derivations for other keys), preserved for
+     * re-serialization. Each element is a {@code byte[][]} of {@code {key, value}}.
+     */
+    public java.util.Vector unknown = new java.util.Vector();
 }

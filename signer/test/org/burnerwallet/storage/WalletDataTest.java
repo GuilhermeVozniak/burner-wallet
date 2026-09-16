@@ -4,50 +4,79 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 /**
- * JUnit 4 tests for WalletData blob serialization.
+ * JUnit 4 tests for WalletData blob serialization (seed blob v2 with MAC).
  */
 public class WalletDataTest {
+
+    private static byte[] filled(int len, int start) {
+        byte[] b = new byte[len];
+        for (int i = 0; i < len; i++) {
+            b[i] = (byte) (i + start);
+        }
+        return b;
+    }
 
     // ---- Seed blob tests ----
 
     @Test
     public void serializeDeserializeSeedBlob() {
-        byte[] salt = new byte[16];
-        byte[] iv = new byte[16];
-        byte[] ciphertext = new byte[80];
-        for (int i = 0; i < 16; i++) {
-            salt[i] = (byte) (i + 1);
-            iv[i] = (byte) (i + 0x10);
-        }
-        for (int i = 0; i < 80; i++) {
-            ciphertext[i] = (byte) (i + 0x20);
-        }
+        byte[] salt = filled(16, 1);
+        byte[] iv = filled(16, 0x10);
+        byte[] ciphertext = filled(80, 0x20);
+        byte[] mac = filled(32, 0x80);
         int iterations = 100000;
 
-        byte[] blob = WalletData.serializeSeedBlob(salt, iv, iterations, ciphertext);
-        assertEquals(WalletData.SEED_BLOB_SIZE, blob.length);
+        byte[] blob = WalletData.serializeSeedBlob(salt, iv, iterations, ciphertext, mac);
+        assertEquals(WalletData.HEADER_SIZE + 80 + WalletData.MAC_SIZE, blob.length);
+        assertEquals(WalletData.BLOB_VERSION, blob[0] & 0xFF);
 
         assertArrayEquals(salt, WalletData.getSalt(blob));
         assertArrayEquals(iv, WalletData.getIv(blob));
         assertEquals(iterations, WalletData.getIterations(blob));
         assertArrayEquals(ciphertext, WalletData.getCiphertext(blob));
+        assertArrayEquals(mac, WalletData.getMac(blob));
+        assertArrayEquals(
+            WalletData.serializeAuthenticatedRegion(salt, iv, iterations, ciphertext),
+            WalletData.getAuthenticatedRegion(blob));
+        assertTrue(WalletData.isSeedBlobWellFormed(blob));
     }
 
     @Test
     public void iterationsEncodedBigEndian() {
-        byte[] salt = new byte[16];
-        byte[] iv = new byte[16];
-        byte[] ciphertext = new byte[80];
-        int iterations = 0x01020304;
+        byte[] blob = WalletData.serializeSeedBlob(new byte[16], new byte[16],
+            0x01020304, new byte[80], new byte[32]);
+        // Big-endian at offset 33: 0x01, 0x02, 0x03, 0x04
+        assertEquals((byte) 0x01, blob[33]);
+        assertEquals((byte) 0x02, blob[34]);
+        assertEquals((byte) 0x03, blob[35]);
+        assertEquals((byte) 0x04, blob[36]);
+        assertEquals(0x01020304, WalletData.getIterations(blob));
+    }
 
-        byte[] blob = WalletData.serializeSeedBlob(salt, iv, iterations, ciphertext);
-        // Big-endian at offset 32: 0x01, 0x02, 0x03, 0x04
-        assertEquals((byte) 0x01, blob[32]);
-        assertEquals((byte) 0x02, blob[33]);
-        assertEquals((byte) 0x03, blob[34]);
-        assertEquals((byte) 0x04, blob[35]);
+    @Test
+    public void wellFormedRejectsBadBlobs() {
+        byte[] good = WalletData.serializeSeedBlob(new byte[16], new byte[16],
+            5000, new byte[80], new byte[32]);
+        assertTrue(WalletData.isSeedBlobWellFormed(good));
 
-        assertEquals(iterations, WalletData.getIterations(blob));
+        // Null / too short
+        assertFalse(WalletData.isSeedBlobWellFormed(null));
+        assertFalse(WalletData.isSeedBlobWellFormed(new byte[WalletData.SEED_BLOB_MIN_SIZE - 1]));
+
+        // Wrong version byte
+        byte[] badVersion = (byte[]) good.clone();
+        badVersion[0] = 1;
+        assertFalse(WalletData.isSeedBlobWellFormed(badVersion));
+
+        // Iteration count too large (would hang the device) or too small
+        assertFalse(WalletData.isSeedBlobWellFormed(WalletData.serializeSeedBlob(
+            new byte[16], new byte[16], 0x7F000000, new byte[80], new byte[32])));
+        assertFalse(WalletData.isSeedBlobWellFormed(WalletData.serializeSeedBlob(
+            new byte[16], new byte[16], 0, new byte[80], new byte[32])));
+
+        // Ciphertext not a multiple of the AES block size
+        assertFalse(WalletData.isSeedBlobWellFormed(WalletData.serializeSeedBlob(
+            new byte[16], new byte[16], 5000, new byte[81], new byte[32])));
     }
 
     // ---- Config tests ----
@@ -78,14 +107,20 @@ public class WalletDataTest {
         assertEquals(999, WalletData.getAddressIndex(config));
     }
 
+    // ---- Attempt counter ----
+
+    @Test
+    public void attemptsRoundTrip() {
+        assertEquals(7, WalletData.getAttempts(WalletData.serializeAttempts(7)));
+        assertEquals(0, WalletData.getAttempts(null));
+        assertEquals(0, WalletData.getAttempts(new byte[3]));
+    }
+
     // ---- Plaintext tests ----
 
     @Test
     public void serializeDeserializePlaintext() {
-        byte[] seed = new byte[64];
-        for (int i = 0; i < 64; i++) {
-            seed[i] = (byte) i;
-        }
+        byte[] seed = filled(64, 0);
         String passphrase = "mypass";
 
         byte[] plaintext = WalletData.buildPlaintext(seed, passphrase);

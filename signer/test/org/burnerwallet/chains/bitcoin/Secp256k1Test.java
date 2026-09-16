@@ -59,17 +59,25 @@ public class Secp256k1Test {
      */
     @Test(expected = CryptoError.class)
     public void invalidKeyCurveOrder() throws CryptoError {
-        BigInteger n = Secp256k1.getN();
-        byte[] nBytes = n.toByteArray();
-        // BigInteger.toByteArray() may have a leading zero byte; we need exactly 32 bytes
-        byte[] privKey = new byte[32];
-        if (nBytes.length > 32) {
-            // strip leading zero
-            System.arraycopy(nBytes, nBytes.length - 32, privKey, 0, 32);
-        } else {
-            System.arraycopy(nBytes, 0, privKey, 32 - nBytes.length, nBytes.length);
-        }
-        Secp256k1.publicKeyFromPrivate(privKey);
+        Secp256k1.publicKeyFromPrivate(Secp256k1.getNBytes());
+    }
+
+    /**
+     * The curve order constant must be the well-known secp256k1 n, and
+     * n - 1 must be accepted as a private key while n is rejected.
+     */
+    @Test
+    public void curveOrderConstant() {
+        assertEquals(
+            "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+            HexCodec.encode(Secp256k1.getNBytes()));
+        BigInteger nMinusOne = new BigInteger(1, Secp256k1.getNBytes()).subtract(BigInteger.ONE);
+        byte[] k = new byte[32];
+        byte[] raw = nMinusOne.toByteArray();
+        System.arraycopy(raw, raw.length - 32, k, 0, 32);
+        assertTrue(Secp256k1.isValidPrivateKey(k));
+        assertFalse(Secp256k1.isValidPrivateKey(Secp256k1.getNBytes()));
+        assertFalse(Secp256k1.isValidPrivateKey(new byte[32]));
     }
 
     /**

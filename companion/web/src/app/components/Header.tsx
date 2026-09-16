@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-
-type Network = "testnet" | "mainnet" | "signet";
+import type { Network } from "@/lib/crypto";
 
 interface HeaderProps {
   network: Network;

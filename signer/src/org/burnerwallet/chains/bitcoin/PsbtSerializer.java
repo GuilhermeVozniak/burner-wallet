@@ -1,14 +1,18 @@
 package org.burnerwallet.chains.bitcoin;
 
+import java.io.ByteArrayOutputStream;
+import java.util.Vector;
+
 import org.burnerwallet.core.CompactSize;
 import org.burnerwallet.core.CryptoError;
 
 /**
  * Serializes a PsbtTransaction back to BIP174 v0 binary format.
  *
- * Writes the PSBT magic, global map (unsigned tx), per-input maps
- * (witness UTXO, partial sig, sighash type, BIP32 derivation),
- * and per-output maps (BIP32 derivation).
+ * Writes the PSBT magic, global map (unsigned tx + preserved unknown
+ * pairs), per-input maps (non-witness UTXO, witness UTXO, partial sig,
+ * sighash type, BIP32 derivation, preserved unknown pairs), and
+ * per-output maps (BIP32 derivation, preserved unknown pairs).
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -21,6 +25,7 @@ public class PsbtSerializer {
 
     // Key types
     private static final byte GLOBAL_UNSIGNED_TX = 0x00;
+    private static final byte INPUT_NON_WITNESS_UTXO = 0x00;
     private static final byte INPUT_WITNESS_UTXO = 0x01;
     private static final byte INPUT_PARTIAL_SIG = 0x02;
     private static final byte INPUT_SIGHASH_TYPE = 0x03;
@@ -44,232 +49,123 @@ public class PsbtSerializer {
                 "PSBT missing unsigned transaction bytes");
         }
 
-        // Calculate total size
-        int size = MAGIC.length;
-
-        // Global map: unsigned tx
-        byte[] txKeyLen = CompactSize.write(1); // key is 1 byte (key type only)
-        byte[] txValueLen = CompactSize.write(psbt.unsignedTxBytes.length);
-        size += txKeyLen.length + 1 + txValueLen.length + psbt.unsignedTxBytes.length;
-        size += 1; // separator 0x00
-
-        // Input maps
-        int[] inputSizes = new int[psbt.inputs.length];
-        for (int i = 0; i < psbt.inputs.length; i++) {
-            inputSizes[i] = calculateInputSize(psbt.inputs[i]);
-            size += inputSizes[i];
-        }
-
-        // Output maps
-        int[] outputSizes = new int[psbt.outputs.length];
-        for (int i = 0; i < psbt.outputs.length; i++) {
-            outputSizes[i] = calculateOutputSize(psbt.outputs[i]);
-            size += outputSizes[i];
-        }
-
-        // Build output buffer
-        byte[] result = new byte[size];
-        int offset = 0;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         // Magic
-        System.arraycopy(MAGIC, 0, result, offset, MAGIC.length);
-        offset += MAGIC.length;
+        out.write(MAGIC, 0, MAGIC.length);
 
-        // Global map: unsigned tx key-value pair
-        // Key: keyLen(1) + keyType(0x00)
-        System.arraycopy(txKeyLen, 0, result, offset, txKeyLen.length);
-        offset += txKeyLen.length;
-        result[offset] = GLOBAL_UNSIGNED_TX;
-        offset += 1;
-        // Value: valueLen + unsignedTxBytes
-        System.arraycopy(txValueLen, 0, result, offset, txValueLen.length);
-        offset += txValueLen.length;
-        System.arraycopy(psbt.unsignedTxBytes, 0, result, offset,
-            psbt.unsignedTxBytes.length);
-        offset += psbt.unsignedTxBytes.length;
-        // Global separator
-        result[offset] = 0x00;
-        offset += 1;
+        // Global map
+        writeKeyValue(out, new byte[] { GLOBAL_UNSIGNED_TX }, psbt.unsignedTxBytes);
+        writeUnknown(out, psbt.unknown);
+        out.write(0x00);
 
         // Input maps
         for (int i = 0; i < psbt.inputs.length; i++) {
-            offset = writeInputMap(result, offset, psbt.inputs[i]);
+            writeInputMap(out, psbt.inputs[i]);
         }
 
         // Output maps
         for (int i = 0; i < psbt.outputs.length; i++) {
-            offset = writeOutputMap(result, offset, psbt.outputs[i]);
+            writeOutputMap(out, psbt.outputs[i]);
         }
 
-        return result;
+        return out.toByteArray();
     }
 
     /**
-     * Calculate the serialized size of an input map (including separator).
+     * Write an input map (including separator).
      */
-    private static int calculateInputSize(PsbtInput input) {
-        int size = 0;
+    private static void writeInputMap(ByteArrayOutputStream out, PsbtInput input) {
+        // Non-witness UTXO (key type 0x00)
+        if (input.nonWitnessUtxo != null) {
+            writeKeyValue(out, new byte[] { INPUT_NON_WITNESS_UTXO },
+                input.nonWitnessUtxo);
+        }
 
         // Witness UTXO (key type 0x01)
         if (input.witnessUtxoScript != null && input.witnessUtxoValue != -1) {
-            byte[] scriptLen = CompactSize.write(input.witnessUtxoScript.length);
-            int valueSize = 8 + scriptLen.length + input.witnessUtxoScript.length;
-            // keyLen(1 byte compact) + keyType(1) + valueLen + value
-            size += CompactSize.write(1).length + 1;
-            size += CompactSize.write(valueSize).length + valueSize;
-        }
-
-        // Partial signature (key type 0x02 + pubkey)
-        if (input.partialSigKey != null && input.partialSigValue != null) {
-            int keyLen = 1 + input.partialSigKey.length; // keyType + pubkey
-            size += CompactSize.write(keyLen).length + keyLen;
-            size += CompactSize.write(input.partialSigValue.length).length
-                  + input.partialSigValue.length;
-        }
-
-        // Sighash type (key type 0x03) — only write if not default SIGHASH_ALL
-        if (input.sighashType != Bip143Sighash.SIGHASH_ALL) {
-            size += CompactSize.write(1).length + 1; // key
-            size += CompactSize.write(4).length + 4; // value (4 bytes LE)
-        }
-
-        // BIP32 derivation (key type 0x06 + pubkey)
-        if (input.bip32PubKey != null && input.bip32Derivation != null) {
-            int keyLen = 1 + input.bip32PubKey.length;
-            size += CompactSize.write(keyLen).length + keyLen;
-            size += CompactSize.write(input.bip32Derivation.length).length
-                  + input.bip32Derivation.length;
-        }
-
-        // Separator
-        size += 1;
-
-        return size;
-    }
-
-    /**
-     * Calculate the serialized size of an output map (including separator).
-     */
-    private static int calculateOutputSize(PsbtOutput output) {
-        int size = 0;
-
-        // BIP32 derivation (key type 0x02 + pubkey)
-        if (output.bip32PubKey != null && output.bip32Derivation != null) {
-            int keyLen = 1 + output.bip32PubKey.length;
-            size += CompactSize.write(keyLen).length + keyLen;
-            size += CompactSize.write(output.bip32Derivation.length).length
-                  + output.bip32Derivation.length;
-        }
-
-        // Separator
-        size += 1;
-
-        return size;
-    }
-
-    /**
-     * Write an input map to the buffer at the given offset.
-     *
-     * @return the new offset after writing
-     */
-    private static int writeInputMap(byte[] buf, int offset, PsbtInput input) {
-
-        // Witness UTXO (key type 0x01)
-        if (input.witnessUtxoScript != null && input.witnessUtxoValue != -1) {
-            // Key: length(1) + type(0x01)
-            offset = writeKeyValue(buf, offset,
-                new byte[] { INPUT_WITNESS_UTXO },
+            writeKeyValue(out, new byte[] { INPUT_WITNESS_UTXO },
                 serializeWitnessUtxo(input));
         }
 
         // Partial signature (key type 0x02 + pubkey)
         if (input.partialSigKey != null && input.partialSigValue != null) {
-            byte[] key = new byte[1 + input.partialSigKey.length];
-            key[0] = INPUT_PARTIAL_SIG;
-            System.arraycopy(input.partialSigKey, 0, key, 1,
-                input.partialSigKey.length);
-            offset = writeKeyValue(buf, offset, key, input.partialSigValue);
+            writeKeyValue(out, prefixed(INPUT_PARTIAL_SIG, input.partialSigKey),
+                input.partialSigValue);
         }
 
-        // Sighash type (key type 0x03)
+        // Sighash type (key type 0x03) -- only write if not default SIGHASH_ALL
         if (input.sighashType != Bip143Sighash.SIGHASH_ALL) {
             byte[] value = new byte[4];
             TxSerializer.writeInt32LE(value, 0, input.sighashType);
-            offset = writeKeyValue(buf, offset,
-                new byte[] { INPUT_SIGHASH_TYPE }, value);
+            writeKeyValue(out, new byte[] { INPUT_SIGHASH_TYPE }, value);
         }
 
         // BIP32 derivation (key type 0x06 + pubkey)
         if (input.bip32PubKey != null && input.bip32Derivation != null) {
-            byte[] key = new byte[1 + input.bip32PubKey.length];
-            key[0] = INPUT_BIP32_DERIVATION;
-            System.arraycopy(input.bip32PubKey, 0, key, 1,
-                input.bip32PubKey.length);
-            offset = writeKeyValue(buf, offset, key, input.bip32Derivation);
+            writeKeyValue(out, prefixed(INPUT_BIP32_DERIVATION, input.bip32PubKey),
+                input.bip32Derivation);
         }
 
-        // Separator
-        buf[offset] = 0x00;
-        offset += 1;
+        // Preserved pairs
+        writeUnknown(out, input.unknown);
 
-        return offset;
+        // Separator
+        out.write(0x00);
     }
 
     /**
-     * Write an output map to the buffer at the given offset.
-     *
-     * @return the new offset after writing
+     * Write an output map (including separator).
      */
-    private static int writeOutputMap(byte[] buf, int offset, PsbtOutput output) {
-
+    private static void writeOutputMap(ByteArrayOutputStream out, PsbtOutput output) {
         // BIP32 derivation (key type 0x02 + pubkey)
         if (output.bip32PubKey != null && output.bip32Derivation != null) {
-            byte[] key = new byte[1 + output.bip32PubKey.length];
-            key[0] = OUTPUT_BIP32_DERIVATION;
-            System.arraycopy(output.bip32PubKey, 0, key, 1,
-                output.bip32PubKey.length);
-            offset = writeKeyValue(buf, offset, key, output.bip32Derivation);
+            writeKeyValue(out, prefixed(OUTPUT_BIP32_DERIVATION, output.bip32PubKey),
+                output.bip32Derivation);
         }
 
-        // Separator
-        buf[offset] = 0x00;
-        offset += 1;
+        writeUnknown(out, output.unknown);
 
-        return offset;
+        // Separator
+        out.write(0x00);
     }
 
     /**
-     * Write a key-value pair in PSBT format.
-     *
-     * Format: compactSize(keyLen) + key + compactSize(valueLen) + value
-     *
-     * @param buf    the output buffer
-     * @param offset the current write position
-     * @param key    the full key bytes (including key type byte)
-     * @param value  the value bytes
-     * @return the new offset after writing
+     * Write preserved unknown key-value pairs.
      */
-    private static int writeKeyValue(byte[] buf, int offset,
+    private static void writeUnknown(ByteArrayOutputStream out, Vector unknown) {
+        if (unknown == null) {
+            return;
+        }
+        for (int i = 0; i < unknown.size(); i++) {
+            byte[][] pair = (byte[][]) unknown.elementAt(i);
+            writeKeyValue(out, pair[0], pair[1]);
+        }
+    }
+
+    /**
+     * Build a key: type byte followed by key data.
+     */
+    private static byte[] prefixed(byte keyType, byte[] keyData) {
+        byte[] key = new byte[1 + keyData.length];
+        key[0] = keyType;
+        System.arraycopy(keyData, 0, key, 1, keyData.length);
+        return key;
+    }
+
+    /**
+     * Write a key-value pair in PSBT format:
+     * compactSize(keyLen) + key + compactSize(valueLen) + value
+     */
+    private static void writeKeyValue(ByteArrayOutputStream out,
             byte[] key, byte[] value) {
-        // Key length
         byte[] keyLen = CompactSize.write(key.length);
-        System.arraycopy(keyLen, 0, buf, offset, keyLen.length);
-        offset += keyLen.length;
+        out.write(keyLen, 0, keyLen.length);
+        out.write(key, 0, key.length);
 
-        // Key
-        System.arraycopy(key, 0, buf, offset, key.length);
-        offset += key.length;
-
-        // Value length
         byte[] valueLen = CompactSize.write(value.length);
-        System.arraycopy(valueLen, 0, buf, offset, valueLen.length);
-        offset += valueLen.length;
-
-        // Value
-        System.arraycopy(value, 0, buf, offset, value.length);
-        offset += value.length;
-
-        return offset;
+        out.write(valueLen, 0, valueLen.length);
+        out.write(value, 0, value.length);
     }
 
     /**

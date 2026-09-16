@@ -38,12 +38,19 @@
   // -------------------------------------------------------------------------
   // Wallet operations (delegate crypto to preload bridge)
   // -------------------------------------------------------------------------
+  function updateAddressLabel() {
+    var coinType = currentNetwork === "mainnet" ? "0" : "1";
+    $("dash-address-label").textContent =
+      "Receiving Address (BIP84 m/84'/" + coinType + "'/0'/0/0)";
+  }
+
   async function loadWallet(mnemonic) {
     walletMnemonic = mnemonic;
     walletSeed = await window.burnerAPI.mnemonicToSeed(mnemonic, "");
     walletAddress = window.burnerAPI.deriveAddress(walletSeed, currentNetwork, 0, 0);
 
     $("dash-network").textContent = currentNetwork;
+    updateAddressLabel();
     $("dash-mnemonic").textContent = mnemonic;
     $("dash-mnemonic").classList.add("mnemonic-hidden");
     $("dash-address").textContent = walletAddress;
@@ -104,6 +111,7 @@
         if (walletMnemonic) {
           walletAddress = window.burnerAPI.deriveAddress(walletSeed, currentNetwork, 0, 0);
           $("dash-network").textContent = currentNetwork;
+          updateAddressLabel();
           $("dash-address").textContent = walletAddress;
           $("dash-balance").textContent = "-- sats";
           $("dash-balance-detail").textContent = "";
@@ -160,7 +168,7 @@
 
     // Import mnemonic
     $("btn-import").addEventListener("click", async function () {
-      var phrase = $("import-mnemonic").value.trim().toLowerCase();
+      var phrase = window.burnerAPI.normalizeMnemonic($("import-mnemonic").value);
       if (!phrase) {
         setStatus("import-status", "Please enter a mnemonic phrase.", "err");
         return;

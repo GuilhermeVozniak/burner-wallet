@@ -42,6 +42,16 @@ public class CameraScanner {
         if (videoCtrl == null) {
             return null;
         }
+        // Ask for a small frame first: a full VGA snapshot plus its
+        // grayscale/integral buffers does not fit the C1-01's 2 MB heap.
+        try {
+            byte[] small = videoCtrl.getSnapshot("encoding=jpeg&width=160&height=120");
+            if (small != null) {
+                return small;
+            }
+        } catch (Exception e) {
+            // Device does not support that encoding string; fall through
+        }
         return videoCtrl.getSnapshot(null);
     }
 
@@ -74,14 +84,26 @@ public class CameraScanner {
     /**
      * Check whether the device supports video capture.
      *
-     * @return true if "capture://video" is a supported protocol
+     * Uses the MMAPI system property {@code supports.video.capture} and,
+     * failing that, the content types offered for the {@code capture}
+     * protocol. ({@code Manager.getSupportedProtocols} takes a content
+     * type, not a protocol name, so querying it with "capture" can never
+     * report availability.)
+     *
+     * @return true if video/image capture is supported
      */
     public boolean isAvailable() {
         try {
-            String[] protocols = Manager.getSupportedProtocols("capture");
-            if (protocols != null) {
-                for (int i = 0; i < protocols.length; i++) {
-                    if ("video".equals(protocols[i])) {
+            String prop = System.getProperty("supports.video.capture");
+            if ("true".equals(prop)) {
+                return true;
+            }
+            String[] types = Manager.getSupportedContentTypes("capture");
+            if (types != null) {
+                for (int i = 0; i < types.length; i++) {
+                    if (types[i] != null
+                            && (types[i].startsWith("video/")
+                                || types[i].startsWith("image/"))) {
                         return true;
                     }
                 }

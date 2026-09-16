@@ -1,7 +1,9 @@
 //! PSBT (BIP174) construction, merging, finalization, and serialization.
 
+use bdk_wallet::miniscript::psbt::PsbtExt;
 use bdk_wallet::Wallet;
 use bitcoin::psbt::Psbt;
+use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, FeeRate, Transaction};
 
 use crate::error::Error;
@@ -36,13 +38,39 @@ pub fn merge_signed_psbt(original: &mut Psbt, signed_bytes: &[u8]) -> Result<(),
 
 /// Finalize a PSBT and extract the broadcastable transaction.
 ///
-/// This uses the default maximum fee rate check (25,000 sat/vB).
-/// Returns an error if the PSBT is not fully signed or if the fee rate
-/// exceeds the limit.
+/// The signer only adds `partial_sigs`; this step turns them into the
+/// final witness for every input. Finalization runs miniscript's
+/// interpreter check, which verifies each signature against the input's
+/// `witness_utxo`, so a PSBT with a missing, malformed, or forged signature
+/// is rejected here instead of producing a transaction the network would
+/// refuse. Extraction then applies the default maximum fee rate check
+/// (25,000 sat/vB).
 pub fn finalize_psbt(psbt: &Psbt) -> Result<Transaction, Error> {
-    psbt.clone()
+    let secp = Secp256k1::verification_only();
+    let mut finalized = psbt.clone();
+    finalized.finalize_mut(&secp).map_err(|errors| {
+        let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        Error::Psbt(format!("finalization failed: {}", msgs.join("; ")))
+    })?;
+    for (i, input) in finalized.inputs.iter().enumerate() {
+        if input.final_script_witness.is_none() && input.final_script_sig.is_none() {
+            return Err(Error::Psbt(format!(
+                "input {} is not finalized (missing signature)",
+                i
+            )));
+        }
+    }
+    finalized
         .extract_tx()
         .map_err(|e| Error::Psbt(e.to_string()))
+}
+
+/// Absolute fee of a PSBT (sum of `witness_utxo`/`non_witness_utxo` amounts
+/// minus sum of outputs).
+///
+/// Fails if any input lacks UTXO information.
+pub fn psbt_fee(psbt: &Psbt) -> Result<Amount, Error> {
+    psbt.fee().map_err(|e| Error::Psbt(e.to_string()))
 }
 
 /// Serialize a PSBT to its binary BIP174 encoding.
@@ -187,14 +215,132 @@ mod tests {
     }
 
     #[test]
-    fn psbt_finalize_unsigned_extracts_tx() {
-        // An unsigned PSBT can still be "finalized" (extract_tx just copies
-        // the unsigned tx with empty witness data). The fee rate check may
-        // pass or fail depending on the tx structure.
+    fn psbt_finalize_unsigned_fails() {
+        // An unsigned PSBT must NOT finalize into a broadcastable tx.
         let psbt = minimal_psbt();
-        // This may succeed or fail depending on fee rate checks -- just
-        // verify it doesn't panic.
-        let _ = finalize_psbt(&psbt);
+        let result = finalize_psbt(&psbt);
+        assert!(result.is_err(), "unsigned PSBT must not finalize");
+    }
+
+    /// Cross-implementation vector: the exact PSBT the Java ME signer
+    /// returns (partial_sigs only, no final witness).
+    fn signing_vector() -> serde_json::Value {
+        serde_json::from_str(include_str!("../../../protocol/vectors/psbt-signing.json"))
+            .expect("psbt-signing.json is valid JSON")
+    }
+
+    #[test]
+    fn psbt_finalize_signer_output_builds_witness() {
+        let vector = signing_vector();
+        let signed_hex = vector["signed_psbt"].as_str().unwrap();
+        let signed = deserialize_psbt(&hex::decode(signed_hex).unwrap()).unwrap();
+
+        // The signer produces partial_sigs only.
+        assert_eq!(signed.inputs[0].partial_sigs.len(), 1);
+        assert!(signed.inputs[0].final_script_witness.is_none());
+
+        let tx = finalize_psbt(&signed).expect("signer output must finalize");
+        assert_eq!(tx.input.len(), 1);
+        // P2WPKH witness: <signature> <pubkey>
+        assert_eq!(tx.input[0].witness.len(), 2);
+        assert_eq!(
+            hex::encode(&tx.input[0].witness[1]),
+            vector["pubkey"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(&tx.input[0].witness[0]),
+            vector["signature_der_sighash"].as_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn psbt_finalize_rejects_tampered_signature() {
+        let vector = signing_vector();
+        let signed_hex = vector["signed_psbt"].as_str().unwrap();
+        let mut signed = deserialize_psbt(&hex::decode(signed_hex).unwrap()).unwrap();
+
+        // Flip a byte inside the DER signature (keep the sighash byte).
+        let (pk, sig) = signed.inputs[0].partial_sigs.iter().next().unwrap();
+        let (pk, mut sig) = (*pk, *sig);
+        let mut r_bytes = sig.signature.serialize_compact();
+        r_bytes[5] ^= 0x01;
+        sig.signature = bitcoin::secp256k1::ecdsa::Signature::from_compact(&r_bytes).unwrap();
+        signed.inputs[0].partial_sigs.clear();
+        signed.inputs[0].partial_sigs.insert(pk, sig);
+
+        assert!(
+            finalize_psbt(&signed).is_err(),
+            "a forged signature must not finalize"
+        );
+    }
+
+    #[test]
+    fn psbt_finalize_unsigned_vector_fails() {
+        let vector = signing_vector();
+        let unsigned_hex = vector["unsigned_psbt"].as_str().unwrap();
+        let unsigned = deserialize_psbt(&hex::decode(unsigned_hex).unwrap()).unwrap();
+        assert!(finalize_psbt(&unsigned).is_err());
+    }
+
+    /// Independent cross-implementation check: recompute the BIP143 sighash
+    /// with rust-bitcoin from the vector's unsigned PSBT and verify the
+    /// Java ME signer's ECDSA signature against it.
+    #[test]
+    fn signer_vector_sighash_and_signature_verify_with_rust_bitcoin() {
+        use bitcoin::secp256k1::{ecdsa::Signature, Message, PublicKey};
+        use bitcoin::sighash::{EcdsaSighashType, SighashCache};
+        use bitcoin::ScriptBuf;
+
+        let vector = signing_vector();
+        let unsigned_hex = vector["unsigned_psbt"].as_str().unwrap();
+        let unsigned = deserialize_psbt(&hex::decode(unsigned_hex).unwrap()).unwrap();
+        let tx = &unsigned.unsigned_tx;
+
+        assert_eq!(
+            tx.compute_txid().to_string(),
+            vector["txid"].as_str().unwrap()
+        );
+
+        // non_witness_utxo must be the transaction the input spends
+        let prev = unsigned.inputs[0].non_witness_utxo.as_ref().unwrap();
+        assert_eq!(prev.compute_txid(), tx.input[0].previous_output.txid);
+        assert_eq!(
+            prev.compute_txid().to_string(),
+            vector["prev_txid"].as_str().unwrap()
+        );
+        let witness_utxo = unsigned.inputs[0].witness_utxo.as_ref().unwrap();
+        assert_eq!(prev.output[0], *witness_utxo);
+
+        let script = ScriptBuf::from_hex(vector["witness_utxo_script"].as_str().unwrap()).unwrap();
+        let amount = Amount::from_sat(vector["witness_utxo_value"].as_u64().unwrap());
+        let mut cache = SighashCache::new(tx);
+        let sighash = cache
+            .p2wpkh_signature_hash(0, &script, amount, EcdsaSighashType::All)
+            .unwrap();
+        assert_eq!(
+            hex::encode(sighash.to_byte_array()),
+            vector["sighash"].as_str().unwrap()
+        );
+
+        let sig_bytes = hex::decode(vector["signature_der_sighash"].as_str().unwrap()).unwrap();
+        let (der, hash_type) = sig_bytes.split_at(sig_bytes.len() - 1);
+        assert_eq!(hash_type, &[0x01], "signer must use SIGHASH_ALL");
+        let sig = Signature::from_der(der).unwrap();
+        let pk = PublicKey::from_slice(&hex::decode(vector["pubkey"].as_str().unwrap()).unwrap())
+            .unwrap();
+        let msg = Message::from_digest(sighash.to_byte_array());
+        Secp256k1::verification_only()
+            .verify_ecdsa(&msg, &sig, &pk)
+            .expect("Java ME signature must verify under rust-bitcoin's sighash");
+    }
+
+    #[test]
+    fn psbt_fee_from_vector() {
+        let vector = signing_vector();
+        let unsigned_hex = vector["unsigned_psbt"].as_str().unwrap();
+        let unsigned = deserialize_psbt(&hex::decode(unsigned_hex).unwrap()).unwrap();
+        // 200,000 in, 100,000 out
+        assert_eq!(psbt_fee(&unsigned).unwrap().to_sat(), 100_000);
     }
 
     #[test]

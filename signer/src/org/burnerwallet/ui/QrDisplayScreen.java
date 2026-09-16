@@ -91,6 +91,33 @@ public class QrDisplayScreen extends Canvas implements CommandListener {
     }
 
     /**
+     * Create a QrDisplayScreen for a plain text payload (single frame, no
+     * multi-frame header), e.g. a receive address that external wallets
+     * must be able to scan. Bech32 text is upper-cased so the QR encoder can
+     * use the compact alphanumeric mode.
+     *
+     * @param screens  the screen manager for display control
+     * @param listener callback for display events
+     * @param text     the text to encode
+     * @param title    title text shown above the QR code
+     */
+    public QrDisplayScreen(ScreenManager screens, QrDisplayListener listener,
+                           String text, String title) {
+        this.screens = screens;
+        this.listener = listener;
+        this.title = title;
+        this.totalFrames = 1;
+        this.currentFrame = 0;
+        this.qrCodes = new QrCode[] {
+            QrCode.encodeText(text.toUpperCase(), QrCode.ECC_MEDIUM)
+        };
+
+        doneCmd = new Command("Done", Command.OK, 1);
+        addCommand(doneCmd);
+        setCommandListener(this);
+    }
+
+    /**
      * Get this Canvas as a Displayable for ScreenManager.
      *
      * @return this Canvas
@@ -104,6 +131,20 @@ public class QrDisplayScreen extends Canvas implements CommandListener {
      */
     public void destroy() {
         stopTimer();
+    }
+
+    /**
+     * Stop cycling while the canvas is not visible (incoming call, pause).
+     */
+    protected void hideNotify() {
+        stopTimer();
+    }
+
+    /**
+     * Resume cycling when the canvas becomes visible again.
+     */
+    protected void showNotify() {
+        restartTimer();
     }
 
     protected void paint(Graphics g) {

@@ -1,14 +1,16 @@
 .PHONY: all build test lint clean help \
        signer companion-core companion-tui \
        companion-web companion-desktop companion-extension companion-mobile \
-       test-signer test-companion-core test-companion-tui \
-       lint-signer lint-companion-core lint-companion-tui \
+       test-signer test-companion-core test-companion-tui test-companion-wasm \
+       lint-signer lint-companion-core lint-companion-tui lint-companion-wasm lint-companion-napi \
        lint-companion-web lint-companion-desktop lint-companion-extension lint-companion-mobile \
        size-check verify-deps reproducible-build emulator setup-tools
 
 SIGNER_DIR   := signer
 CORE_DIR     := companion/core
 TUI_DIR      := companion/tui
+WASM_DIR     := companion/core-wasm
+NAPI_DIR     := companion/core-napi
 WEB_DIR      := companion/web
 DESKTOP_DIR  := companion/desktop
 EXT_DIR      := companion/extension
@@ -44,7 +46,7 @@ companion-extension: ## Build companion Chrome extension
 companion-mobile: ## Type-check companion mobile app
 	cd $(MOBILE_DIR) && pnpm install && pnpm run build:check
 
-test: test-signer test-companion-core test-companion-tui ## Run all tests
+test: test-signer test-companion-core test-companion-tui test-companion-wasm ## Run all tests
 
 test-signer: ## Run signer test suite
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant test
@@ -55,7 +57,10 @@ test-companion-core: ## Run companion core tests
 test-companion-tui: ## Run companion TUI tests
 	cd $(TUI_DIR) && cargo test
 
-lint: lint-signer lint-companion-core lint-companion-tui \
+test-companion-wasm: ## Run companion WASM bridge tests (native)
+	cd $(WASM_DIR) && cargo test
+
+lint: lint-signer lint-companion-core lint-companion-tui lint-companion-wasm lint-companion-napi \
       lint-companion-web lint-companion-desktop lint-companion-extension lint-companion-mobile ## Run all linters
 
 lint-signer: ## Run signer static analysis
@@ -66,6 +71,12 @@ lint-companion-core: ## Run clippy on companion core
 
 lint-companion-tui: ## Run clippy on companion TUI
 	cd $(TUI_DIR) && cargo clippy -- -D warnings
+
+lint-companion-wasm: ## Run rustfmt + clippy on companion WASM bridge
+	cd $(WASM_DIR) && cargo fmt -- --check && cargo clippy --all-targets -- -D warnings
+
+lint-companion-napi: ## Run rustfmt + clippy on companion napi bridge
+	cd $(NAPI_DIR) && cargo fmt -- --check && cargo clippy --all-targets -- -D warnings
 
 lint-companion-web: ## Lint companion web app
 	cd $(WEB_DIR) && pnpm lint
@@ -92,6 +103,8 @@ clean: ## Clean all build artifacts
 	cd $(SIGNER_DIR) && JAVA_HOME=$(SIGNER_JAVA) ant clean || true
 	cd $(CORE_DIR) && cargo clean
 	cd $(TUI_DIR) && cargo clean
+	cd $(WASM_DIR) && cargo clean
+	cd $(NAPI_DIR) && cargo clean
 	rm -rf $(WEB_DIR)/.next $(WEB_DIR)/out
 	rm -rf $(DESKTOP_DIR)/dist
 	rm -rf $(EXT_DIR)/dist

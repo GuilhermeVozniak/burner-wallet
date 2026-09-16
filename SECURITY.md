@@ -64,7 +64,7 @@ The following are **not** in scope:
 - The signer device never connects to any IP network
 - The signer never trusts the companion beyond PSBT structure
 - All signing keys remain exclusively on the signer device
-- Cryptographic operations use audited libraries (Bouncy Castle Lightweight API)
+- Signer cryptographic primitives are a small in-house CLDC 1.1 implementation, verified against published test vectors and differential-tested against Bouncy Castle; independent review is pending
 - Deterministic signing (RFC 6979) prevents nonce reuse
 - Seeds are encrypted at rest with PIN-derived keys
 - Reproducible builds enable independent verification of released artifacts

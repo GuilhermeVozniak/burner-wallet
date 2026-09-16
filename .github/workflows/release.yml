@@ -98,11 +98,13 @@ jobs:
       - name: Run tests
         if: matrix.cross != true
         working-directory: companion/tui
-        run: cargo test
+        run: cargo test --locked
 
+      # --locked: build exactly the dependency versions in the committed
+      # Cargo.lock so two builds of the same tag produce the same binary.
       - name: Build release
         working-directory: companion/tui
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename binary (unix)
         if: runner.os != 'Windows'

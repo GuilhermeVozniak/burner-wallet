@@ -8,6 +8,7 @@ import javax.microedition.lcdui.StringItem;
 
 import org.burnerwallet.chains.bitcoin.BitcoinAddress;
 import org.burnerwallet.chains.bitcoin.Bip44Path;
+import org.burnerwallet.chains.bitcoin.PsbtSigner;
 import org.burnerwallet.core.CryptoError;
 
 /**
@@ -133,6 +134,14 @@ public class ReceiveScreen implements CommandListener {
 
     public void commandAction(Command c, Displayable d) {
         if (c == nextCmd) {
+            // The signer only searches receive indices 0..MAX_RECEIVE_INDEX
+            // when signing; handing out a higher index would receive funds
+            // this wallet cannot spend.
+            if (addressIndex >= PsbtSigner.MAX_RECEIVE_INDEX) {
+                screens.showError("Max address index ("
+                        + PsbtSigner.MAX_RECEIVE_INDEX + ") reached", form);
+                return;
+            }
             addressIndex++;
             buildForm();
             screens.showScreen(form);

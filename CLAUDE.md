@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Burner Wallet is an air-gapped Bitcoin cold-storage wallet. An old Nokia C1-01 feature phone (Java ME) acts as the offline signer — it never touches the internet. A multi-platform companion ecosystem handles chain access, PSBT construction, and broadcasting. Data crosses the air gap via QR codes (primary), with Bluetooth OBEX, MicroSD, and manual text entry as fallbacks.
 
+**Security hardening pass (2026-09):** signer enforces SIGHASH_ALL and verifies every input against its `non_witness_utxo` (txid, amount, script) before signing; seed storage is blob v2 (random salt/IV, encrypt-then-MAC, 10-wrong-PIN wipe); companions verify every partial signature before finalizing (miniscript interpreter in the TUI, explicit secp256k1 check over the BIP143 digest in the web app, since btc-signer's `finalize()` does not verify); the web app builds real BIP174 PSBTs for the signer and finalizes its output; the TUI is watch-only (xpub descriptors) and checks signed PSBTs against the pending one; `Cargo.lock` files are tracked and CI builds with `--locked`. Test counts: 296 signer, 51 core, 38 TUI, 13 WASM (398 total). `protocol/vectors/psbt-signing.json` was regenerated with a real funding transaction.
+
+**Device compatibility (2026-09-16):** until this date the shrunk signer JAR had only ever run on desktop JVMs; it embedded `bcprov-jdk14`, a J2SE build that needs `java.math.BigInteger`, `java.util.HashMap`, `java.lang.ThreadLocal`, `java.security.SecureRandom` and friends, none of which exist on CLDC 1.1, so the first key derivation on a Nokia would have thrown `NoClassDefFoundError`. Bouncy Castle was replaced by an in-house CLDC-safe crypto package (`signer/src/org/burnerwallet/core/crypto`: SHA-256/512, RIPEMD-160, HMAC, PBKDF2, AES, 256-bit modular arithmetic, secp256k1 Jacobian points, RFC 6979 ECDSA). The signer now compiles against only the CLDC/MIDP stubs, ProGuard treats unresolved references as errors, and `cd signer && ant cldc-audit` (blocking in CI) proves the shipped JAR references nothing outside CLDC 1.1 / MIDP 2.0. Bouncy Castle stays on the test classpath as a differential oracle (`CryptoOracleTest`). The emulator flow (import, PIN, receive QR, manual PSBT entry, review, sign, signed-PSBT QR) passes on the shrunk JAR and produces byte-identical signatures to the old build. Execution on physical hardware is still pending.
+
 **Current milestone:** M3 complete, M4 next. M0 delivered Rust companion core (32 tests). M1a delivered Java ME signer crypto (114 tests). M1b delivered encrypted storage, PIN, and LCDUI screens (153 signer tests). M1c delivered PSBT parsing/signing, QR encode/decode/camera, and companion TUI (212 signer tests, 47 companion tests). M2 delivered TUI testing (30 tests), CI enablement, transaction history, camera QR pipeline, ImageProcessor, and Checkstyle (224 signer tests, 48 companion core tests, 30 TUI tests). M3 delivered multi-platform companions with real crypto: WASM bridge (13 tests), napi-rs bridge, web (Next.js + QR display/scan + Esplora), desktop (Electron), extension (Chrome), mobile (Expo). 315 total tests.
 
 ## Architecture
@@ -29,8 +33,9 @@ tools/
   proguard/          ProGuard 7.8.2 (symlink, not tracked)
 ```
 
-The **signer** is an extremely constrained Java ME environment (Java 1.4 source level, no generics, no autoboxing, no enhanced for-loop, no varargs, 1 MB JAR budget, ~360KB currently). It compiles against CLDC 1.1 + MIDP 2.0 stub JARs in `signer/lib/` and uses Bouncy Castle (`bcprov-jdk14`) for crypto, shrunk by ProGuard. Signer modules:
+The **signer** is an extremely constrained Java ME environment (Java 1.4 source level, no generics, no autoboxing, no enhanced for-loop, no varargs, 1 MB JAR budget, ~156KB currently). It compiles against only the CLDC 1.1 + MIDP 2.0 stub JARs in `signer/lib/` (no `rt.jar`), ships its own CLDC-safe crypto in `core/crypto/`, and is shrunk and preverified by ProGuard with warnings fatal. Bouncy Castle (`bcprov-jdk14`) is a test-only oracle. Signer modules:
 - `core/` — HashUtils, HexCodec, ByteArrayUtils, Base58, Bech32, CryptoError, AesUtils, EntropyCollector, CompactSize
+- `core/crypto/` — Digest, Sha256, Sha512, Ripemd160, Hmac, Pbkdf2, Aes, Fe (256-bit arithmetic mod p and n), EcPoint (secp256k1 Jacobian, Montgomery ladder)
 - `chains/bitcoin/` — Secp256k1, Bip39Wordlist, Bip39Mnemonic, Bip32Key, Bip32Derivation, Bip44Path, BitcoinAddress, NetworkParams, TxSerializer, TxData, TxInput, TxOutput, Bip143Sighash, PsbtParser, PsbtTransaction, PsbtInput, PsbtOutput, PsbtSigner, PsbtSerializer
 - `storage/` — WalletStore, WalletData, RecordStoreAdapter, MidpRecordStoreAdapter
 - `transport/` — QrCode, QrSegment, BitBuffer, QrDecoder, MultiFrameEncoder, MultiFrameDecoder, CameraScanner, ImageProcessor, ManualEntryScreen
@@ -63,10 +68,10 @@ make companion-tui       # cargo build in companion/tui
 make test
 
 # Run specific test suites
-cd companion/core && cargo test                    # 48 tests
+cd companion/core && cargo test                    # 51 tests
 cd companion/core && cargo test <test_name>        # single test
 cd companion/tui && cargo test
-cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 224 tests
+cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant test  # 296 tests
 
 # Lint
 cd companion/core && cargo clippy -- -D warnings   # CI enforces -D warnings
@@ -74,6 +79,9 @@ cd companion/core && cargo fmt -- --check
 
 # Signer JAR size check (must stay under 1 MB)
 make size-check
+
+# Fail if the shrunk signer JAR references any class CLDC 1.1 / MIDP 2.0 lacks (must pass)
+cd signer && JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home ant cldc-audit
 
 # Launch signer in J2ME emulator
 make emulator
@@ -93,7 +101,7 @@ make setup-tools
 
 ## Key Constraints
 
-- **Signer (Java ME):** Java 1.4 source/target, compiled with JDK 8. No Java 5+ language features. Bootclasspath includes `signer/lib/cldcapi11.jar`, `signer/lib/midpapi20.jar`, and `rt.jar` (for BigInteger). ProGuard runs with `-microedition` and injects `bcprov-jdk14.jar` as `-injars` (not `-libraryjars`) for tree-shaking. JUnit tests compile with `source=1.8` in `signer/test/` and run on desktop JDK.
+- **Signer (Java ME):** Java 1.4 source/target, compiled with JDK 8. No Java 5+ language features. Bootclasspath is only `signer/lib/cldcapi11.jar` and `signer/lib/midpapi20.jar`, so any non-CLDC API fails to compile. ProGuard runs with `-microedition` over the signer classes alone and treats unresolved references as errors; `ant cldc-audit` re-checks the shipped JAR. `bcprov-jdk14.jar` is on the test classpath only, as the differential oracle in `CryptoOracleTest`. JUnit tests compile with `source=1.8` in `signer/test/` and run on desktop JDK.
 - **Companion Core (Rust):** Edition 2021, stable toolchain. Clippy warnings are errors in CI. Uses `bitcoin 0.32`, `bip39 2`, `bdk_wallet 1`.
 - **CI matrix:** Companion runs on ubuntu/macos/windows. Signer CI runs on ubuntu with Temurin JDK 8.
 - **Makefile hardcodes** `SIGNER_JAVA` to `/Library/Java/JavaVirtualMachines/zulu-8.jdk/Contents/Home` for local dev.

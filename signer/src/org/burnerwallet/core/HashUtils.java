@@ -1,17 +1,18 @@
 package org.burnerwallet.core;
 
-import org.bouncycastle.crypto.digests.RIPEMD160Digest;
-import org.bouncycastle.crypto.digests.SHA256Digest;
-import org.bouncycastle.crypto.digests.SHA512Digest;
-import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
-import org.bouncycastle.crypto.macs.HMac;
-import org.bouncycastle.crypto.params.KeyParameter;
+import org.burnerwallet.core.crypto.Hmac;
+import org.burnerwallet.core.crypto.Pbkdf2;
+import org.burnerwallet.core.crypto.Ripemd160;
+import org.burnerwallet.core.crypto.Sha256;
+import org.burnerwallet.core.crypto.Sha512;
 
 /**
- * Cryptographic hash utilities using Bouncy Castle lightweight API.
+ * Cryptographic hash utilities backed by the in-house CLDC-safe
+ * implementations in {@code org.burnerwallet.core.crypto}.
  *
- * Provides SHA-256, RIPEMD-160, HMAC-SHA512, and PBKDF2-HMAC-SHA512
- * for Bitcoin key derivation (BIP32, BIP39, address generation).
+ * Provides SHA-256, RIPEMD-160, HMAC-SHA256/512, and PBKDF2-HMAC-SHA512
+ * for Bitcoin key derivation (BIP32, BIP39, address generation) and
+ * wallet storage authentication.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -24,11 +25,7 @@ public class HashUtils {
      * @return 32-byte hash
      */
     public static byte[] sha256(byte[] input) {
-        SHA256Digest digest = new SHA256Digest();
-        digest.update(input, 0, input.length);
-        byte[] out = new byte[32];
-        digest.doFinal(out, 0);
-        return out;
+        return Sha256.hash(input);
     }
 
     /**
@@ -49,11 +46,7 @@ public class HashUtils {
      * @return 20-byte hash
      */
     public static byte[] ripemd160(byte[] input) {
-        RIPEMD160Digest digest = new RIPEMD160Digest();
-        digest.update(input, 0, input.length);
-        byte[] out = new byte[20];
-        digest.doFinal(out, 0);
-        return out;
+        return Ripemd160.hash(input);
     }
 
     /**
@@ -68,6 +61,23 @@ public class HashUtils {
     }
 
     /**
+     * Compute HMAC-SHA256.
+     * Used to authenticate the encrypted wallet blob at rest.
+     *
+     * @param key  HMAC key
+     * @param data data to authenticate
+     * @return 32-byte MAC
+     */
+    public static byte[] hmacSha256(byte[] key, byte[] data) {
+        Hmac hmac = new Hmac(new Sha256(), key);
+        hmac.update(data, 0, data.length);
+        byte[] out = new byte[32];
+        hmac.doFinal(out, 0);
+        hmac.destroy();
+        return out;
+    }
+
+    /**
      * Compute HMAC-SHA512.
      * Used by BIP32 for master key derivation and child key derivation.
      *
@@ -76,17 +86,18 @@ public class HashUtils {
      * @return 64-byte MAC
      */
     public static byte[] hmacSha512(byte[] key, byte[] data) {
-        HMac hmac = new HMac(new SHA512Digest());
-        hmac.init(new KeyParameter(key));
+        Hmac hmac = new Hmac(new Sha512(), key);
         hmac.update(data, 0, data.length);
         byte[] out = new byte[64];
         hmac.doFinal(out, 0);
+        hmac.destroy();
         return out;
     }
 
     /**
      * Derive a key using PBKDF2 with HMAC-SHA512.
-     * Used by BIP39 for mnemonic-to-seed derivation.
+     * Used by BIP39 for mnemonic-to-seed derivation and by the wallet
+     * store for PIN stretching.
      *
      * @param password         password bytes (typically UTF-8 encoded mnemonic)
      * @param salt             salt bytes (typically "mnemonic" + optional passphrase)
@@ -96,9 +107,6 @@ public class HashUtils {
      */
     public static byte[] pbkdf2HmacSha512(byte[] password, byte[] salt,
                                            int iterations, int derivedKeyLength) {
-        PKCS5S2ParametersGenerator gen = new PKCS5S2ParametersGenerator(new SHA512Digest());
-        gen.init(password, salt, iterations);
-        KeyParameter params = (KeyParameter) gen.generateDerivedMacParameters(derivedKeyLength * 8);
-        return params.getKey();
+        return Pbkdf2.hmacSha512(password, salt, iterations, derivedKeyLength);
     }
 }

@@ -3,12 +3,24 @@ package org.burnerwallet.chains.bitcoin;
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CompactSize;
 import org.burnerwallet.core.CryptoError;
+import org.burnerwallet.core.HashUtils;
 
 /**
  * Parser and serializer for raw Bitcoin transactions.
  *
- * Handles the standard (non-segwit-witness) serialization format:
+ * {@link #parse} handles the standard (non-witness) serialization format:
  *   version | input_count | inputs... | output_count | outputs... | locktime
+ * which is what a PSBT's unsigned transaction must use.
+ *
+ * {@link #parseAllowWitness} additionally accepts the BIP144 witness
+ * serialization (marker 0x00, flag 0x01, witness stacks after the outputs),
+ * which is how companions serialize {@code non_witness_utxo} previous
+ * transactions. Witness data is skipped, so {@link #computeTxid} on the
+ * result yields the txid (which never covers witness data).
+ *
+ * All counts and lengths are bounds-checked against the remaining input so
+ * a malformed transaction fails with {@link CryptoError} instead of an
+ * unbounded allocation or an {@code ArrayIndexOutOfBoundsException}.
  *
  * The LE (little-endian) helper methods are package-visible so that
  * Bip143Sighash can reuse them without duplication.
@@ -19,14 +31,49 @@ public class TxSerializer {
 
     private static final int ERR_TX_PARSE = 10;
 
+    /** Smallest possible input: prevhash(32) + index(4) + scriptlen(1) + sequence(4). */
+    private static final int MIN_INPUT_SIZE = 41;
+
+    /** Smallest possible output: value(8) + scriptlen(1). */
+    private static final int MIN_OUTPUT_SIZE = 9;
+
     /**
-     * Parse raw transaction bytes into a TxData structure.
+     * Parse raw (non-witness) transaction bytes into a TxData structure.
      *
      * @param data the raw serialized transaction
      * @return parsed TxData
      * @throws CryptoError if the data is malformed or truncated
      */
     public static TxData parse(byte[] data) throws CryptoError {
+        return parseInternal(data, false);
+    }
+
+    /**
+     * Parse transaction bytes that may use the BIP144 witness serialization.
+     * Witness stacks are validated for structure and skipped.
+     *
+     * @param data the raw serialized transaction (with or without witnesses)
+     * @return parsed TxData (inputs/outputs only; no witness data retained)
+     * @throws CryptoError if the data is malformed or truncated
+     */
+    public static TxData parseAllowWitness(byte[] data) throws CryptoError {
+        return parseInternal(data, true);
+    }
+
+    /**
+     * Compute the transaction id: double SHA-256 of the non-witness
+     * serialization, in internal byte order (the same order used for
+     * {@link TxInput#prevTxHash}).
+     *
+     * @param tx the parsed transaction
+     * @return 32-byte txid in internal byte order
+     */
+    public static byte[] computeTxid(TxData tx) {
+        return HashUtils.doubleSha256(serialize(tx));
+    }
+
+    private static TxData parseInternal(byte[] data, boolean allowWitness)
+            throws CryptoError {
         if (data == null || data.length < 10) {
             throw new CryptoError(ERR_TX_PARSE, "Transaction too short");
         }
@@ -38,10 +85,21 @@ public class TxSerializer {
         tx.version = readInt32LE(data, offset);
         offset += 4;
 
+        // BIP144 marker (0x00) + flag (0x01)
+        boolean segwit = false;
+        if (allowWitness && data.length - offset >= 2
+                && data[offset] == 0x00 && data[offset + 1] == 0x01) {
+            segwit = true;
+            offset += 2;
+        }
+
         // Input count (CompactSize)
-        long[] csResult = CompactSize.read(data, offset);
-        int inputCount = (int) csResult[0];
+        long[] csResult = CompactSize.readChecked(data, offset);
         offset += (int) csResult[1];
+        if (csResult[0] < 0 || csResult[0] > (data.length - offset) / MIN_INPUT_SIZE) {
+            throw new CryptoError(ERR_TX_PARSE, "Bad input count");
+        }
+        int inputCount = (int) csResult[0];
 
         // Parse inputs
         tx.inputs = new TxInput[inputCount];
@@ -49,22 +107,22 @@ public class TxSerializer {
             TxInput input = new TxInput();
 
             // Previous transaction hash (32 bytes, kept in internal byte order)
+            // + previous output index (4 bytes LE)
+            require(data, offset, 36);
             input.prevTxHash = ByteArrayUtils.copyOfRange(data, offset, offset + 32);
             offset += 32;
-
-            // Previous output index (4 bytes LE, uint32 stored as int)
             input.prevIndex = readInt32LE(data, offset);
             offset += 4;
 
             // ScriptSig length + data
-            csResult = CompactSize.read(data, offset);
-            int scriptLen = (int) csResult[0];
+            csResult = CompactSize.readChecked(data, offset);
             offset += (int) csResult[1];
-
+            int scriptLen = lengthField(csResult[0], data, offset);
             input.scriptSig = ByteArrayUtils.copyOfRange(data, offset, offset + scriptLen);
             offset += scriptLen;
 
             // Sequence (4 bytes LE, uint32 stored as long)
+            require(data, offset, 4);
             input.sequence = readUInt32LE(data, offset);
             offset += 4;
 
@@ -72,9 +130,12 @@ public class TxSerializer {
         }
 
         // Output count (CompactSize)
-        csResult = CompactSize.read(data, offset);
-        int outputCount = (int) csResult[0];
+        csResult = CompactSize.readChecked(data, offset);
         offset += (int) csResult[1];
+        if (csResult[0] < 0 || csResult[0] > (data.length - offset) / MIN_OUTPUT_SIZE) {
+            throw new CryptoError(ERR_TX_PARSE, "Bad output count");
+        }
+        int outputCount = (int) csResult[0];
 
         // Parse outputs
         tx.outputs = new TxOutput[outputCount];
@@ -82,28 +143,74 @@ public class TxSerializer {
             TxOutput output = new TxOutput();
 
             // Value (8 bytes LE, int64)
+            require(data, offset, 8);
             output.value = readInt64LE(data, offset);
             offset += 8;
 
             // ScriptPubKey length + data
-            csResult = CompactSize.read(data, offset);
-            int scriptLen = (int) csResult[0];
+            csResult = CompactSize.readChecked(data, offset);
             offset += (int) csResult[1];
-
+            int scriptLen = lengthField(csResult[0], data, offset);
             output.scriptPubKey = ByteArrayUtils.copyOfRange(data, offset, offset + scriptLen);
             offset += scriptLen;
 
             tx.outputs[i] = output;
         }
 
+        // Witness stacks: one per input, each a vector of byte strings
+        if (segwit) {
+            for (int i = 0; i < inputCount; i++) {
+                csResult = CompactSize.readChecked(data, offset);
+                offset += (int) csResult[1];
+                if (csResult[0] < 0 || csResult[0] > data.length - offset) {
+                    throw new CryptoError(ERR_TX_PARSE, "Bad witness item count");
+                }
+                int items = (int) csResult[0];
+                for (int j = 0; j < items; j++) {
+                    csResult = CompactSize.readChecked(data, offset);
+                    offset += (int) csResult[1];
+                    int itemLen = lengthField(csResult[0], data, offset);
+                    offset += itemLen;
+                }
+            }
+        }
+
         // Locktime (4 bytes LE, int32)
+        require(data, offset, 4);
         tx.locktime = readInt32LE(data, offset);
+        offset += 4;
+
+        if (offset != data.length) {
+            throw new CryptoError(ERR_TX_PARSE, "Trailing bytes after transaction");
+        }
 
         return tx;
     }
 
     /**
-     * Serialize a TxData structure back to raw transaction bytes.
+     * Validate a length field read from the stream: it must be non-negative
+     * and fit in the bytes remaining after {@code offset}.
+     */
+    private static int lengthField(long value, byte[] data, int offset)
+            throws CryptoError {
+        if (value < 0 || value > data.length - offset) {
+            throw new CryptoError(ERR_TX_PARSE, "Bad length at offset " + offset);
+        }
+        return (int) value;
+    }
+
+    /**
+     * Require {@code needed} more bytes from {@code offset}.
+     */
+    private static void require(byte[] data, int offset, int needed)
+            throws CryptoError {
+        if (needed > data.length - offset) {
+            throw new CryptoError(ERR_TX_PARSE, "Transaction truncated at offset " + offset);
+        }
+    }
+
+    /**
+     * Serialize a TxData structure back to raw (non-witness) transaction bytes.
      *
      * @param tx the transaction to serialize
      * @return raw serialized bytes

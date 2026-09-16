@@ -107,6 +107,41 @@ public class Bech32Test {
         assertArrayEquals(program, decodedProgram);
     }
 
+    // ---- Bech32m (BIP350) ----
+
+    @Test
+    public void decodeBech32mTaproot() throws CryptoError {
+        // BIP350 vector: witness v1, 32-byte program
+        byte[] result = Bech32.decode("bc",
+                "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0");
+        assertEquals(1, result[0] & 0xFF);
+        byte[] program = new byte[result.length - 1];
+        System.arraycopy(result, 1, program, 0, program.length);
+        assertEquals("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+                HexCodec.encode(program));
+    }
+
+    @Test
+    public void encodeV1UsesBech32m() throws CryptoError {
+        byte[] program = HexCodec.decode(
+                "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+        assertEquals("bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+                Bech32.encode("bc", 1, program));
+    }
+
+    @Test(expected = CryptoError.class)
+    public void decodeRejectsV1WithBech32Checksum() throws CryptoError {
+        // BIP350 invalid: v1 encoded with the Bech32 (not Bech32m) constant
+        Bech32.decode("bc",
+                "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx");
+    }
+
+    @Test(expected = CryptoError.class)
+    public void decodeRejectsV0WithBech32mChecksum() throws CryptoError {
+        // BIP350 invalid: v0 encoded with the Bech32m constant
+        Bech32.decode("bc", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kemeawh");
+    }
+
     // ---- Invalid addresses ----
 
     @Test(expected = CryptoError.class)

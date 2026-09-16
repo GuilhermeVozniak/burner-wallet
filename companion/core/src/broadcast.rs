@@ -3,13 +3,15 @@
 use bitcoin::{Transaction, Txid};
 
 use crate::error::Error;
+use crate::network::esplora_client;
 
 /// Broadcast a finalized (fully signed) transaction via an Esplora server.
 ///
 /// Returns the transaction ID on success. The transaction must be fully
-/// signed and valid -- Esplora will reject invalid transactions.
+/// signed and valid -- Esplora will reject invalid transactions. The
+/// request times out after [`crate::network::ESPLORA_TIMEOUT_SECS`].
 pub fn broadcast_tx(tx: &Transaction, esplora_url: &str) -> Result<Txid, Error> {
-    let client = bdk_esplora::esplora_client::Builder::new(esplora_url).build_blocking();
+    let client = esplora_client(esplora_url);
     client
         .broadcast(tx)
         .map_err(|e| Error::Network(e.to_string()))?;

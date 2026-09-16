@@ -6,6 +6,18 @@ use bdk_wallet::{Balance, Wallet};
 use bitcoin::{Amount, Network, Txid};
 
 use crate::error::Error;
+use crate::network::esplora_client;
+
+/// Number of consecutive unused script pubkeys to scan before stopping.
+///
+/// Must cover the signer's key search window (`PsbtSigner.MAX_RECEIVE_INDEX`
+/// is 19, i.e. 20 receive addresses), otherwise funds received at a higher
+/// index than the last used one are invisible to the companion. 20 is also
+/// the BIP44 recommended gap limit.
+pub const STOP_GAP: usize = 20;
+
+/// Parallel Esplora requests during a full scan.
+const PARALLEL_REQUESTS: usize = 5;
 
 /// Summary of a wallet transaction for display purposes.
 #[derive(Debug, Clone)]
@@ -41,15 +53,16 @@ pub fn create_wallet(
 
 /// Sync wallet UTXOs and transaction history via an Esplora server.
 ///
-/// Performs a full scan with a stop gap of 5 and 5 parallel requests.
-/// After syncing, the wallet's balance and UTXO set will be up to date.
+/// Performs a full scan with a stop gap of [`STOP_GAP`] and 5 parallel
+/// requests. After syncing, the wallet's balance and UTXO set will be up
+/// to date. Requests time out after [`crate::network::ESPLORA_TIMEOUT_SECS`].
 pub fn sync_wallet(wallet: &mut Wallet, esplora_url: &str) -> Result<(), Error> {
     use bdk_esplora::EsploraExt;
 
-    let client = bdk_esplora::esplora_client::Builder::new(esplora_url).build_blocking();
+    let client = esplora_client(esplora_url);
     let request = wallet.start_full_scan().build();
     let update = client
-        .full_scan(request, 5, 5)
+        .full_scan(request, STOP_GAP, PARALLEL_REQUESTS)
         .map_err(|e| Error::Network(e.to_string()))?;
     wallet
         .apply_update(update)

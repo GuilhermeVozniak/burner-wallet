@@ -1,5 +1,7 @@
 package org.burnerwallet.chains.bitcoin;
 
+import java.util.Vector;
+
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CompactSize;
 import org.burnerwallet.core.CryptoError;
@@ -9,12 +11,17 @@ import org.burnerwallet.core.CryptoError;
  *
  * Extracts fields needed for signing P2WPKH transactions:
  * - Global: unsigned transaction (key type 0x00)
- * - Per-input: witness UTXO, non-witness UTXO, sighash type,
+ * - Per-input: non-witness UTXO, witness UTXO, sighash type,
  *   BIP32 derivation, partial signatures
  * - Per-output: BIP32 derivation
  *
- * Unknown key types are silently skipped, making the parser
- * forward-compatible with PSBT extensions.
+ * Key/value pairs the signer does not interpret are preserved on the
+ * parsed objects so that {@link PsbtSerializer} can re-emit them, as
+ * BIP174 requires. Duplicate keys within a map are rejected (BIP174).
+ *
+ * Every length read from the input is validated against the remaining
+ * bytes before any allocation, so malformed data fails with
+ * {@link CryptoError} rather than exhausting the device's heap.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
@@ -37,6 +44,12 @@ public class PsbtParser {
 
     // Output key types
     private static final int OUTPUT_BIP32_DERIVATION = 0x02;
+
+    /** One parsed key-value pair. */
+    private static final class Pair {
+        byte[] key;
+        byte[] value;
+    }
 
     /**
      * Parse a BIP174 v0 PSBT from raw bytes.
@@ -94,49 +107,21 @@ public class PsbtParser {
      */
     private static void parseGlobalMap(byte[] data, int[] offsetHolder,
             PsbtTransaction psbt) throws CryptoError {
+        Vector seen = new Vector();
         while (true) {
-            int offset = offsetHolder[0];
-            checkBounds(data, offset, 1);
-
-            // Read key length
-            long[] csResult = CompactSize.read(data, offset);
-            int keyLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            // Separator byte (keyLen == 0) terminates the map
-            if (keyLen == 0) {
-                offsetHolder[0] = offset;
+            Pair p = readPair(data, offsetHolder);
+            if (p == null) {
                 return;
             }
+            rejectDuplicate(seen, p.key);
 
-            checkBounds(data, offset, keyLen);
-
-            // Key type is the first byte of the key
-            int keyType = data[offset] & 0xFF;
-            // Key data follows the type byte (keyLen - 1 bytes)
-            int keyDataLen = keyLen - 1;
-            int keyDataStart = offset + 1;
-            offset += keyLen;
-
-            // Read value length
-            checkBounds(data, offset, 1);
-            csResult = CompactSize.read(data, offset);
-            int valueLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            checkBounds(data, offset, valueLen);
-            int valueStart = offset;
-            offset += valueLen;
-
-            // Process known key types
-            if (keyType == GLOBAL_UNSIGNED_TX) {
-                psbt.unsignedTxBytes = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + valueLen);
-                psbt.unsignedTx = TxSerializer.parse(psbt.unsignedTxBytes);
+            int keyType = p.key[0] & 0xFF;
+            if (keyType == GLOBAL_UNSIGNED_TX && p.key.length == 1) {
+                psbt.unsignedTxBytes = p.value;
+                psbt.unsignedTx = TxSerializer.parse(p.value);
+            } else {
+                psbt.unknown.addElement(new byte[][] { p.key, p.value });
             }
-            // Unknown key types are silently skipped
-
-            offsetHolder[0] = offset;
         }
     }
 
@@ -145,97 +130,73 @@ public class PsbtParser {
      */
     private static void parseInputMap(byte[] data, int[] offsetHolder,
             PsbtInput input) throws CryptoError {
+        Vector seen = new Vector();
         while (true) {
-            int offset = offsetHolder[0];
-            checkBounds(data, offset, 1);
-
-            // Read key length
-            long[] csResult = CompactSize.read(data, offset);
-            int keyLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            // Separator
-            if (keyLen == 0) {
-                offsetHolder[0] = offset;
+            Pair p = readPair(data, offsetHolder);
+            if (p == null) {
                 return;
             }
+            rejectDuplicate(seen, p.key);
 
-            checkBounds(data, offset, keyLen);
+            int keyType = p.key[0] & 0xFF;
+            int keyDataLen = p.key.length - 1;
 
-            int keyType = data[offset] & 0xFF;
-            int keyDataLen = keyLen - 1;
-            int keyDataStart = offset + 1;
-            offset += keyLen;
-
-            // Read value length
-            checkBounds(data, offset, 1);
-            csResult = CompactSize.read(data, offset);
-            int valueLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            checkBounds(data, offset, valueLen);
-            int valueStart = offset;
-            offset += valueLen;
-
-            // Process known input key types
-            if (keyType == INPUT_NON_WITNESS_UTXO) {
-                input.nonWitnessUtxo = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + valueLen);
-            } else if (keyType == INPUT_WITNESS_UTXO) {
-                parseWitnessUtxo(data, valueStart, valueLen, input);
-            } else if (keyType == INPUT_PARTIAL_SIG) {
-                // Key data = pubkey
-                if (keyDataLen > 0) {
-                    input.partialSigKey = ByteArrayUtils.copyOfRange(
-                        data, keyDataStart, keyDataStart + keyDataLen);
+            if (keyType == INPUT_NON_WITNESS_UTXO && keyDataLen == 0) {
+                input.nonWitnessUtxo = p.value;
+            } else if (keyType == INPUT_WITNESS_UTXO && keyDataLen == 0) {
+                parseWitnessUtxo(p.value, input);
+            } else if (keyType == INPUT_PARTIAL_SIG && keyDataLen > 0
+                    && input.partialSigKey == null) {
+                input.partialSigKey = ByteArrayUtils.copyOfRange(p.key, 1, p.key.length);
+                input.partialSigValue = p.value;
+            } else if (keyType == INPUT_SIGHASH_TYPE && keyDataLen == 0) {
+                // BIP174: the value is exactly a 32-bit little-endian integer
+                if (p.value.length != 4) {
+                    throw new CryptoError(CryptoError.ERR_PSBT,
+                        "Bad sighash type length: " + p.value.length);
                 }
-                input.partialSigValue = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + valueLen);
-            } else if (keyType == INPUT_SIGHASH_TYPE) {
-                if (valueLen >= 4) {
-                    input.sighashType = TxSerializer.readInt32LE(data, valueStart);
-                }
-            } else if (keyType == INPUT_BIP32_DERIVATION) {
-                // Key data = pubkey
-                if (keyDataLen > 0) {
-                    input.bip32PubKey = ByteArrayUtils.copyOfRange(
-                        data, keyDataStart, keyDataStart + keyDataLen);
-                }
-                input.bip32Derivation = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + valueLen);
+                input.sighashType = TxSerializer.readInt32LE(p.value, 0);
+            } else if (keyType == INPUT_BIP32_DERIVATION && keyDataLen > 0
+                    && input.bip32PubKey == null) {
+                input.bip32PubKey = ByteArrayUtils.copyOfRange(p.key, 1, p.key.length);
+                input.bip32Derivation = p.value;
+            } else {
+                // Unknown types, and additional partial sigs / derivations
+                // for other keys, are preserved verbatim.
+                input.unknown.addElement(new byte[][] { p.key, p.value });
             }
-            // Unknown key types are silently skipped
-
-            offsetHolder[0] = offset;
         }
     }
 
     /**
      * Parse a WITNESS_UTXO value field.
      *
-     * Format: value (8 bytes LE) + scriptPubKey_length (CompactSize) + scriptPubKey
+     * Format: value (8 bytes LE) + scriptPubKey_length (CompactSize) + scriptPubKey.
+     * The script must end exactly at the end of the value field.
      */
-    private static void parseWitnessUtxo(byte[] data, int valueStart,
-            int valueLen, PsbtInput input) throws CryptoError {
-        if (valueLen < 9) {
+    private static void parseWitnessUtxo(byte[] value, PsbtInput input)
+            throws CryptoError {
+        if (value.length < 9) {
             throw new CryptoError(CryptoError.ERR_PSBT,
                 "Witness UTXO value too short");
         }
 
-        int off = valueStart;
+        long amount = TxSerializer.readInt64LE(value, 0);
+        if (amount < 0) {
+            throw new CryptoError(CryptoError.ERR_PSBT,
+                "Witness UTXO amount is negative");
+        }
 
-        // Value: 8 bytes LE
-        input.witnessUtxoValue = TxSerializer.readInt64LE(data, off);
-        off += 8;
+        long[] csResult = CompactSize.readChecked(value, 8);
+        int scriptStart = 8 + (int) csResult[1];
+        if (csResult[0] < 0 || csResult[0] != value.length - scriptStart) {
+            throw new CryptoError(CryptoError.ERR_PSBT,
+                "Witness UTXO script length mismatch");
+        }
 
-        // ScriptPubKey length (CompactSize)
-        long[] csResult = CompactSize.read(data, off);
-        int scriptLen = safeIntCast(csResult[0]);
-        off += safeIntCast(csResult[1]);
-
-        // ScriptPubKey
+        input.witnessUtxoValue = amount;
         input.witnessUtxoScript = ByteArrayUtils.copyOfRange(
-            data, off, off + scriptLen);
+            value, scriptStart, value.length);
     }
 
     /**
@@ -243,77 +204,86 @@ public class PsbtParser {
      */
     private static void parseOutputMap(byte[] data, int[] offsetHolder,
             PsbtOutput output) throws CryptoError {
+        Vector seen = new Vector();
         while (true) {
-            int offset = offsetHolder[0];
-            checkBounds(data, offset, 1);
-
-            // Read key length
-            long[] csResult = CompactSize.read(data, offset);
-            int keyLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            // Separator
-            if (keyLen == 0) {
-                offsetHolder[0] = offset;
+            Pair p = readPair(data, offsetHolder);
+            if (p == null) {
                 return;
             }
+            rejectDuplicate(seen, p.key);
 
-            checkBounds(data, offset, keyLen);
+            int keyType = p.key[0] & 0xFF;
+            int keyDataLen = p.key.length - 1;
 
-            int keyType = data[offset] & 0xFF;
-            int keyDataLen = keyLen - 1;
-            int keyDataStart = offset + 1;
-            offset += keyLen;
-
-            // Read value length
-            checkBounds(data, offset, 1);
-            csResult = CompactSize.read(data, offset);
-            int valueLen = safeIntCast(csResult[0]);
-            offset += safeIntCast(csResult[1]);
-
-            checkBounds(data, offset, valueLen);
-            int valueStart = offset;
-            offset += valueLen;
-
-            // Process known output key types
-            if (keyType == OUTPUT_BIP32_DERIVATION) {
-                // Key data = pubkey
-                if (keyDataLen > 0) {
-                    output.bip32PubKey = ByteArrayUtils.copyOfRange(
-                        data, keyDataStart, keyDataStart + keyDataLen);
-                }
-                output.bip32Derivation = ByteArrayUtils.copyOfRange(
-                    data, valueStart, valueStart + valueLen);
+            if (keyType == OUTPUT_BIP32_DERIVATION && keyDataLen > 0
+                    && output.bip32PubKey == null) {
+                output.bip32PubKey = ByteArrayUtils.copyOfRange(p.key, 1, p.key.length);
+                output.bip32Derivation = p.value;
+            } else {
+                output.unknown.addElement(new byte[][] { p.key, p.value });
             }
-            // Unknown key types are silently skipped
-
-            offsetHolder[0] = offset;
         }
     }
 
     /**
-     * Safely cast a long CompactSize value to int, rejecting overflow.
+     * Read one key-value pair at offsetHolder[0], advancing it.
      *
-     * @param value the long value from CompactSize.read()
-     * @return the value as int
-     * @throws CryptoError if value is negative or exceeds Integer.MAX_VALUE
+     * @return the pair, or null if the map separator (key length 0) was read
      */
-    private static int safeIntCast(long value) throws CryptoError {
-        if (value < 0 || value > Integer.MAX_VALUE) {
+    private static Pair readPair(byte[] data, int[] offsetHolder) throws CryptoError {
+        int offset = offsetHolder[0];
+
+        long[] csResult = CompactSize.readChecked(data, offset);
+        offset += (int) csResult[1];
+        int keyLen = lengthField(csResult[0], data, offset);
+
+        if (keyLen == 0) {
+            offsetHolder[0] = offset;
+            return null;
+        }
+
+        byte[] key = ByteArrayUtils.copyOfRange(data, offset, offset + keyLen);
+        offset += keyLen;
+
+        csResult = CompactSize.readChecked(data, offset);
+        offset += (int) csResult[1];
+        int valueLen = lengthField(csResult[0], data, offset);
+
+        byte[] value = ByteArrayUtils.copyOfRange(data, offset, offset + valueLen);
+        offset += valueLen;
+
+        offsetHolder[0] = offset;
+        Pair p = new Pair();
+        p.key = key;
+        p.value = value;
+        return p;
+    }
+
+    /**
+     * Validate a length field: non-negative and within the bytes remaining
+     * after {@code offset}. Written to be immune to int overflow.
+     */
+    private static int lengthField(long value, byte[] data, int offset)
+            throws CryptoError {
+        if (offset < 0 || offset > data.length
+                || value < 0 || value > data.length - offset) {
             throw new CryptoError(CryptoError.ERR_PSBT,
-                "Value too large: " + value);
+                "PSBT data truncated at offset " + offset);
         }
         return (int) value;
     }
 
     /**
-     * Check that at least {@code needed} bytes remain from {@code offset}.
+     * BIP174: a map must not contain the same key twice.
      */
-    private static void checkBounds(byte[] data, int offset, int needed)
-            throws CryptoError {
-        if (offset + needed > data.length) {
-            throw new CryptoError(CryptoError.ERR_PSBT,
-                "PSBT data truncated at offset " + offset);
+    private static void rejectDuplicate(Vector seen, byte[] key) throws CryptoError {
+        for (int i = 0; i < seen.size(); i++) {
+            if (ByteArrayUtils.constantTimeEquals((byte[]) seen.elementAt(i), key)) {
+                throw new CryptoError(CryptoError.ERR_PSBT,
+                    "Duplicate key in PSBT map (type 0x"
+                    + Integer.toHexString(key[0] & 0xFF) + ")");
+            }
         }
+        seen.addElement(key);
     }
 }

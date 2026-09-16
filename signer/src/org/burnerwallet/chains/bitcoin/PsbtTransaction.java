@@ -10,6 +10,13 @@ package org.burnerwallet.chains.bitcoin;
  */
 public class PsbtTransaction {
 
+    /**
+     * Global key/value pairs this signer does not interpret, preserved for
+     * re-serialization as BIP174 requires. Each element is a
+     * {@code byte[][]} of {@code {key, value}} where key includes the type byte.
+     */
+    public java.util.Vector unknown = new java.util.Vector();
+
     /** Raw bytes of the unsigned transaction from the global map. */
     public byte[] unsignedTxBytes;
 
@@ -36,6 +43,20 @@ public class PsbtTransaction {
             }
         }
         return total;
+    }
+
+    /**
+     * Whether every input carries a witness UTXO (so the fee is known).
+     *
+     * @return true if all inputs have a witness UTXO value
+     */
+    public boolean allInputsHaveWitnessUtxo() {
+        for (int i = 0; i < inputs.length; i++) {
+            if (inputs[i].witnessUtxoValue < 0 || inputs[i].witnessUtxoScript == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

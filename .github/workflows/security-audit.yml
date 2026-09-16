@@ -35,6 +35,10 @@ jobs:
         working-directory: companion/core-wasm
         run: cargo audit
 
+      - name: Audit companion napi bridge
+        working-directory: companion/core-napi
+        run: cargo audit
+
   signer-deps:
     name: Signer dependency verification
     runs-on: ubuntu-latest
@@ -113,11 +117,11 @@ jobs:
 
       - name: Run companion core tests (includes BIP vector tests)
         working-directory: companion/core
-        run: cargo test
+        run: cargo test --locked
 
       - name: Run WASM bridge tests (includes cross-impl vectors)
         working-directory: companion/core-wasm
-        run: cargo test
+        run: cargo test --locked
 
       - name: Verify cross-impl vectors exist
         run: |

@@ -1,6 +1,6 @@
 [package]
 name = "burner-companion-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "WASM bridge exposing crypto-only subset of Burner Wallet companion for web and extension"
 license = "MIT"
@@ -23,3 +23,11 @@ getrandom = { version = "0.2", features = ["js"] }
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 hex = "0.4"
+
+# Small, panic-free WASM binaries: a panic in the browser would otherwise
+# carry an unwinder and formatting machinery for no benefit.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

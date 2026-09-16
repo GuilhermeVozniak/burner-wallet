@@ -56,3 +56,8 @@ jobs:
       - name: Size check
         working-directory: signer
         run: ant size-check
+
+      # The shrunk JAR must reference only classes that exist on CLDC 1.1 / MIDP 2.0.
+      - name: CLDC compatibility audit
+        working-directory: signer
+        run: ant cldc-audit

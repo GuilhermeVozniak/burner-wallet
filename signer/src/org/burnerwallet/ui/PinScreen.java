@@ -4,6 +4,7 @@ import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
 import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.Form;
+import javax.microedition.lcdui.StringItem;
 import javax.microedition.lcdui.TextField;
 
 /**
@@ -14,6 +15,10 @@ import javax.microedition.lcdui.TextField;
  *   screens.showScreen(pin.getForm());
  *
  * For CONFIRM mode, call setFirstPin(String) before showing.
+ *
+ * In ENTER mode a "Reset" command (with confirmation) lets a user whose
+ * store is corrupted or whose PIN is lost wipe the wallet and start over
+ * without uninstalling the MIDlet.
  */
 public class PinScreen implements CommandListener {
 
@@ -32,6 +37,7 @@ public class PinScreen implements CommandListener {
     private final TextField pinField;
     private final Command okCmd;
     private final Command backCmd;
+    private Command resetCmd;
 
     private String firstPin;
 
@@ -43,6 +49,12 @@ public class PinScreen implements CommandListener {
         void onPinCreated(String pin);
         void onPinConfirmed(String pin);
         void onPinCancelled();
+
+        /**
+         * Called when the user confirms wiping the wallet from the unlock
+         * screen (lost PIN / corrupted store recovery path).
+         */
+        void onPinReset();
     }
 
     public PinScreen(ScreenManager screens, int mode, PinListener listener) {
@@ -69,6 +81,8 @@ public class PinScreen implements CommandListener {
 
         if (mode == MODE_ENTER) {
             backCmd = new Command("Exit", Command.EXIT, 2);
+            resetCmd = new Command("Reset wallet", Command.SCREEN, 3);
+            form.addCommand(resetCmd);
         } else {
             backCmd = new Command("Back", Command.BACK, 2);
         }
@@ -94,6 +108,8 @@ public class PinScreen implements CommandListener {
             handleOk();
         } else if (c == backCmd) {
             listener.onPinCancelled();
+        } else if (c == resetCmd) {
+            showResetConfirmation();
         }
     }
 
@@ -118,5 +134,29 @@ public class PinScreen implements CommandListener {
                 pinField.setString("");
             }
         }
+    }
+
+    /**
+     * Ask for confirmation before wiping the wallet from the unlock screen.
+     */
+    private void showResetConfirmation() {
+        final Form confirm = new Form("Reset Wallet?");
+        confirm.append(new StringItem(null,
+                "This permanently deletes the wallet on this phone. "
+                + "You will need your seed phrase to restore it."));
+        final Command wipeCmd = new Command("Wipe", Command.OK, 1);
+        final Command cancelCmd = new Command("Cancel", Command.BACK, 2);
+        confirm.addCommand(wipeCmd);
+        confirm.addCommand(cancelCmd);
+        confirm.setCommandListener(new CommandListener() {
+            public void commandAction(Command c, Displayable d) {
+                if (c == wipeCmd) {
+                    listener.onPinReset();
+                } else if (c == cancelCmd) {
+                    screens.showScreen(form);
+                }
+            }
+        });
+        screens.showScreen(confirm);
     }
 }

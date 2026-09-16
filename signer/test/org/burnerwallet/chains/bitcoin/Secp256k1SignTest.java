@@ -27,6 +27,11 @@ public class Secp256k1SignTest {
         byte[] sig = Secp256k1.sign(msgHash, privKey);
 
         assertEquals("Signature must be 64 bytes", 64, sig.length);
+        // Widely published RFC 6979 / low-S vector for secp256k1, key = 1
+        assertEquals(
+            "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d8"
+            + "2442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5",
+            HexCodec.encode(sig));
 
         // Verify the signature is valid
         byte[] pubKey = Secp256k1.publicKeyFromPrivate(privKey);
@@ -39,7 +44,7 @@ public class Secp256k1SignTest {
      */
     @Test
     public void signLowSNormalization() throws CryptoError {
-        BigInteger halfN = Secp256k1.getN().shiftRight(1);
+        BigInteger halfN = new BigInteger(1, Secp256k1.getNBytes()).shiftRight(1);
 
         // Test with several different keys
         for (int k = 1; k <= 5; k++) {

@@ -13,12 +13,18 @@ public class MultiFrameEncoder {
 
     private static final int HEADER_SIZE = 2;
 
+    /** Single-byte frame counters cap the payload at this many frames. */
+    public static final int MAX_FRAMES = 255;
+
     /**
      * Split payload into frames with 2-byte header.
      *
      * @param payload          data to split
      * @param maxBytesPerFrame max total frame size including header
      * @return array of frames, each containing header + data chunk
+     * @throws IllegalArgumentException if the payload needs more than
+     *         {@link #MAX_FRAMES} frames (the counters would wrap and the
+     *         decoder would silently assemble a truncated payload)
      */
     public static byte[][] encode(byte[] payload, int maxBytesPerFrame) {
         int dataPerFrame = maxBytesPerFrame - HEADER_SIZE;
@@ -29,6 +35,10 @@ public class MultiFrameEncoder {
         int totalFrames = (payload.length + dataPerFrame - 1) / dataPerFrame;
         if (totalFrames == 0) {
             totalFrames = 1;
+        }
+        if (totalFrames > MAX_FRAMES) {
+            throw new IllegalArgumentException("Payload needs " + totalFrames
+                + " frames; max " + MAX_FRAMES);
         }
 
         byte[][] frames = new byte[totalFrames][];

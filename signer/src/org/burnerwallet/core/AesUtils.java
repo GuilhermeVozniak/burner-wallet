@@ -1,22 +1,16 @@
 package org.burnerwallet.core;
 
-import org.bouncycastle.crypto.BufferedBlockCipher;
-import org.bouncycastle.crypto.engines.AESLightEngine;
-import org.bouncycastle.crypto.modes.CBCBlockCipher;
-import org.bouncycastle.crypto.paddings.PKCS7Padding;
-import org.bouncycastle.crypto.paddings.PaddedBufferedBlockCipher;
-import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.crypto.params.ParametersWithIV;
+import org.burnerwallet.core.crypto.Aes;
 
 /**
- * AES-256-CBC encryption and decryption using Bouncy Castle lightweight API.
- *
- * Uses AESLightEngine (smallest footprint, no static tables) wrapped in
- * CBCBlockCipher with PKCS7 padding.
+ * AES-256-CBC encryption and decryption with PKCS7 padding, backed by the
+ * in-house CLDC-safe {@link Aes} block cipher.
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
 public class AesUtils {
+
+    private static final int BLOCK = Aes.BLOCK_SIZE;
 
     /**
      * Encrypt plaintext using AES-256-CBC with PKCS7 padding.
@@ -29,26 +23,36 @@ public class AesUtils {
      */
     public static byte[] encrypt(byte[] plaintext, byte[] key, byte[] iv)
             throws CryptoError {
+        checkKeyAndIv(key, iv, CryptoError.ERR_ENCRYPTION);
+        if (plaintext == null) {
+            throw new CryptoError(CryptoError.ERR_ENCRYPTION, "AES encryption failed: no input");
+        }
+        Aes aes = new Aes(key);
         try {
-            BufferedBlockCipher cipher = createCipher(true, key, iv);
-            byte[] output = new byte[cipher.getOutputSize(plaintext.length)];
-            int len = cipher.processBytes(plaintext, 0, plaintext.length, output, 0);
-            len += cipher.doFinal(output, len);
-            // Trim if getOutputSize over-estimated
-            if (len < output.length) {
-                return ByteArrayUtils.copyOf(output, len);
+            int padLen = BLOCK - (plaintext.length % BLOCK);
+            byte[] out = new byte[plaintext.length + padLen];
+            byte[] block = new byte[BLOCK];
+            byte[] prev = ByteArrayUtils.copyOf(iv, BLOCK);
+            for (int off = 0; off < out.length; off += BLOCK) {
+                for (int i = 0; i < BLOCK; i++) {
+                    int idx = off + i;
+                    byte pb = idx < plaintext.length ? plaintext[idx] : (byte) padLen;
+                    block[i] = (byte) (pb ^ prev[i]);
+                }
+                aes.encryptBlock(block, 0, out, off);
+                System.arraycopy(out, off, prev, 0, BLOCK);
             }
-            return output;
-        } catch (Exception e) {
-            throw new CryptoError(CryptoError.ERR_ENCRYPTION,
-                "AES encryption failed: " + e.getMessage());
+            ByteArrayUtils.zeroFill(block);
+            return out;
+        } finally {
+            aes.destroy();
         }
     }
 
     /**
      * Decrypt ciphertext using AES-256-CBC with PKCS7 padding.
      *
-     * @param ciphertext data to decrypt (must be a multiple of 16 bytes)
+     * @param ciphertext data to decrypt (must be a non-empty multiple of 16 bytes)
      * @param key        32-byte AES-256 key
      * @param iv         16-byte initialization vector
      * @return plaintext
@@ -56,36 +60,49 @@ public class AesUtils {
      */
     public static byte[] decrypt(byte[] ciphertext, byte[] key, byte[] iv)
             throws CryptoError {
-        try {
-            BufferedBlockCipher cipher = createCipher(false, key, iv);
-            byte[] output = new byte[cipher.getOutputSize(ciphertext.length)];
-            int len = cipher.processBytes(ciphertext, 0, ciphertext.length, output, 0);
-            len += cipher.doFinal(output, len);
-            // Trim if getOutputSize over-estimated
-            if (len < output.length) {
-                return ByteArrayUtils.copyOf(output, len);
-            }
-            return output;
-        } catch (Exception e) {
+        checkKeyAndIv(key, iv, CryptoError.ERR_DECRYPTION);
+        if (ciphertext == null || ciphertext.length == 0 || ciphertext.length % BLOCK != 0) {
             throw new CryptoError(CryptoError.ERR_DECRYPTION,
-                "AES decryption failed: " + e.getMessage());
+                "AES decryption failed: ciphertext length is not a multiple of 16");
+        }
+        Aes aes = new Aes(key);
+        byte[] padded = new byte[ciphertext.length];
+        try {
+            byte[] prev = iv;
+            for (int off = 0; off < ciphertext.length; off += BLOCK) {
+                aes.decryptBlock(ciphertext, off, padded, off);
+                for (int i = 0; i < BLOCK; i++) {
+                    padded[off + i] ^= prev[i];
+                }
+                prev = ByteArrayUtils.copyOfRange(ciphertext, off, off + BLOCK);
+            }
+            int padLen = padded[padded.length - 1] & 0xff;
+            boolean valid = padLen >= 1 && padLen <= BLOCK;
+            if (valid) {
+                // Constant-time-ish check over all padding bytes
+                int diff = 0;
+                for (int i = 0; i < padLen; i++) {
+                    diff |= (padded[padded.length - 1 - i] & 0xff) ^ padLen;
+                }
+                valid = diff == 0;
+            }
+            if (!valid) {
+                throw new CryptoError(CryptoError.ERR_DECRYPTION,
+                    "AES decryption failed: pad block corrupted");
+            }
+            return ByteArrayUtils.copyOf(padded, padded.length - padLen);
+        } finally {
+            ByteArrayUtils.zeroFill(padded);
+            aes.destroy();
         }
     }
 
-    /**
-     * Create and initialize a PaddedBufferedBlockCipher for AES-CBC with PKCS7.
-     *
-     * @param encrypt true for encryption, false for decryption
-     * @param key     32-byte AES-256 key
-     * @param iv      16-byte initialization vector
-     * @return initialized cipher ready for processBytes/doFinal
-     */
-    private static BufferedBlockCipher createCipher(boolean encrypt,
-                                                     byte[] key, byte[] iv) {
-        PaddedBufferedBlockCipher cipher = new PaddedBufferedBlockCipher(
-            new CBCBlockCipher(new AESLightEngine()),
-            new PKCS7Padding());
-        cipher.init(encrypt, new ParametersWithIV(new KeyParameter(key), iv));
-        return cipher;
+    private static void checkKeyAndIv(byte[] key, byte[] iv, int errorCode) throws CryptoError {
+        if (key == null || key.length != 32) {
+            throw new CryptoError(errorCode, "AES key must be 32 bytes");
+        }
+        if (iv == null || iv.length != BLOCK) {
+            throw new CryptoError(errorCode, "AES IV must be 16 bytes");
+        }
     }
 }

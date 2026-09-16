@@ -15,6 +15,7 @@ import {
 import {
   generateMnemonic,
   validateMnemonic,
+  normalizeMnemonic,
   mnemonicToSeed,
   deriveAddress,
   fetchBalance,
@@ -50,11 +51,13 @@ function HomeScreen({
   setNetwork,
   onCreateWallet,
   onGoImport,
+  error,
 }: {
   network: Network;
   setNetwork: (n: Network) => void;
   onCreateWallet: () => void;
   onGoImport: () => void;
+  error: string | null;
 }) {
   const networks: Network[] = ["testnet", "signet", "mainnet"];
 
@@ -93,6 +96,8 @@ function HomeScreen({
       <TouchableOpacity style={styles.secondaryBtn} onPress={onGoImport}>
         <Text style={styles.secondaryBtnText}>Import Wallet</Text>
       </TouchableOpacity>
+
+      {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
 }
@@ -112,7 +117,7 @@ function ImportScreen({
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = useCallback(() => {
-    const trimmed = input.trim().replace(/\s+/g, " ");
+    const trimmed = normalizeMnemonic(input);
     if (!validateMnemonic(trimmed)) {
       setError("Invalid mnemonic. Please check your words and try again.");
       return;
@@ -160,12 +165,14 @@ function WalletScreen({
   network,
   onSync,
   syncing,
+  syncError,
   onBack,
 }: {
   wallet: WalletState;
   network: Network;
   onSync: () => void;
   syncing: boolean;
+  syncError: string | null;
   onBack: () => void;
 }) {
   const [showMnemonic, setShowMnemonic] = useState(false);
@@ -202,6 +209,7 @@ function WalletScreen({
       ) : (
         <Text style={styles.valueMuted}>Not yet synced</Text>
       )}
+      {syncError && <Text style={styles.error}>{syncError}</Text>}
 
       <TouchableOpacity
         style={[styles.primaryBtn, syncing && styles.disabledBtn]}
@@ -244,13 +252,21 @@ export default function App() {
   const [network, setNetwork] = useState<Network>("testnet");
   const [wallet, setWallet] = useState<WalletState | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadWallet = useCallback(
     async (mnemonic: string) => {
-      const seed = await mnemonicToSeed(mnemonic);
-      const address = deriveAddress(seed, network);
-      setWallet({ mnemonic, address, balance: null });
-      setScreen("wallet");
+      try {
+        setLoadError(null);
+        const seed = await mnemonicToSeed(mnemonic);
+        const address = deriveAddress(seed, network);
+        setWallet({ mnemonic, address, balance: null });
+        setSyncError(null);
+        setScreen("wallet");
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : "Failed to load wallet");
+      }
     },
     [network]
   );
@@ -270,11 +286,12 @@ export default function App() {
   const handleSync = useCallback(async () => {
     if (!wallet) return;
     setSyncing(true);
+    setSyncError(null);
     try {
       const balance = await fetchBalance(wallet.address, network);
       setWallet((prev) => (prev ? { ...prev, balance } : prev));
-    } catch {
-      // Silently ignore sync errors for now
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "Sync failed");
     } finally {
       setSyncing(false);
     }
@@ -282,6 +299,7 @@ export default function App() {
 
   const handleBack = useCallback(() => {
     setWallet(null);
+    setSyncError(null);
     setScreen("home");
   }, []);
 
@@ -294,6 +312,7 @@ export default function App() {
           setNetwork={setNetwork}
           onCreateWallet={handleCreate}
           onGoImport={() => setScreen("import")}
+          error={loadError}
         />
       )}
       {screen === "import" && (
@@ -308,6 +327,7 @@ export default function App() {
           network={network}
           onSync={handleSync}
           syncing={syncing}
+          syncError={syncError}
           onBack={handleBack}
         />
       )}
