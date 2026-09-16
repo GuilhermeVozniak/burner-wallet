@@ -3,10 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "./components/Header";
-import { generateMnemonic, validateMnemonic } from "@/lib/crypto";
+import {
+  generateMnemonic,
+  validateMnemonic,
+  normalizeMnemonic,
+  type Network,
+} from "@/lib/crypto";
 import { startSession, clearSession, isSessionExpired } from "@/lib/session";
-
-type Network = "testnet" | "mainnet" | "signet";
 
 export default function Home() {
   const router = useRouter();
@@ -31,8 +34,8 @@ export default function Home() {
   }
 
   function handleImport() {
-    const phrase = mnemonicInput.trim();
-    const words = phrase.split(/\s+/);
+    const phrase = normalizeMnemonic(mnemonicInput);
+    const words = phrase ? phrase.split(" ") : [];
     if (words.length !== 12 && words.length !== 24) {
       setError("Mnemonic must be 12 or 24 words.");
       return;

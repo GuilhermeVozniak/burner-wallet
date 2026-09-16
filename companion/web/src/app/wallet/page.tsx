@@ -4,11 +4,14 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../components/Header";
 import SessionGuard from "../components/SessionGuard";
-import { mnemonicToSeed, deriveAddress, fetchBalance } from "@/lib/crypto";
+import {
+  mnemonicToSeed,
+  deriveAddress,
+  fetchBalance,
+  type Network,
+} from "@/lib/crypto";
 import { clearSession } from "@/lib/session";
 import QrDisplay from "../components/QrDisplay";
-
-type Network = "testnet" | "mainnet" | "signet";
 
 export default function WalletPage() {
   const router = useRouter();
@@ -26,18 +29,32 @@ export default function WalletPage() {
     const mn = sessionStorage.getItem("bw_mnemonic");
     const src = sessionStorage.getItem("bw_source");
 
-    if (!mn) return;
+    if (!mn) {
+      // No wallet in this session (direct navigation or expired) -- go home
+      // instead of rendering a blank page forever.
+      router.replace("/");
+      return;
+    }
 
     setNetwork(net || "testnet");
     setMnemonic(mn);
     setSource(src || "unknown");
 
     // Derive address
-    mnemonicToSeed(mn).then((seed) => {
-      const addr = deriveAddress(seed, net || "testnet", 0, 0);
-      setAddress(addr);
-    });
-  }, []);
+    let cancelled = false;
+    mnemonicToSeed(mn)
+      .then((seed) => {
+        if (cancelled) return;
+        const addr = deriveAddress(seed, net || "testnet", 0, 0);
+        setAddress(addr);
+      })
+      .catch((e) => {
+        if (!cancelled) setSyncError(e instanceof Error ? e.message : "Key derivation failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const handleSync = useCallback(async () => {
     if (!address) return;

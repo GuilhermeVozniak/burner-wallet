@@ -7,14 +7,32 @@ import SessionGuard from "../components/SessionGuard";
 import QrDisplay from "../components/QrDisplay";
 import {
   mnemonicToSeed,
-  deriveAddress,
-  deriveChangeAddress,
+  deriveKey,
   fetchUtxos,
+  fetchTxHex,
   buildSendSummary,
+  type Network,
 } from "@/lib/crypto";
+import {
+  buildUnsignedPsbt,
+  encodeFrames,
+  validateRecipient,
+  formatSats,
+  type UnsignedPsbt,
+} from "@/lib/psbt";
+import { PENDING_PSBT_KEY, PENDING_TXID_KEY } from "@/lib/session";
 
-type Network = "testnet" | "mainnet" | "signet";
 type Step = "form" | "loading" | "review";
+
+/** Refuse obviously wrong fee rates before they reach the signer. */
+const MAX_FEE_RATE_SAT_VB = 1000;
+
+interface TxSummary {
+  inputs: { txid: string; vout: number; value: number }[];
+  outputs: { address: string; value: number }[];
+  fee: number;
+  change: number;
+}
 
 export default function SendPage() {
   const router = useRouter();
@@ -26,13 +44,10 @@ export default function SendPage() {
   const [amount, setAmount] = useState("");
   const [feeRate, setFeeRate] = useState("1");
 
-  // Transaction details from UTXO selection
-  const [txSummary, setTxSummary] = useState<{
-    inputs: { txid: string; vout: number; value: number }[];
-    outputs: { address: string; value: number }[];
-    fee: number;
-    change: number;
-  } | null>(null);
+  const [txSummary, setTxSummary] = useState<TxSummary | null>(null);
+  const [unsigned, setUnsigned] = useState<UnsignedPsbt | null>(null);
+  const [frames, setFrames] = useState<Uint8Array[]>([]);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const net = sessionStorage.getItem("bw_network") as Network | null;
@@ -40,27 +55,29 @@ export default function SendPage() {
   }, []);
 
   async function handleReview() {
-    if (!recipient.trim()) {
+    const addr = recipient.trim();
+    if (!addr) {
       setError("Recipient address is required.");
       return;
     }
-    // Validate bech32 address format
-    const addr = recipient.trim();
-    const validPrefixes = network === "mainnet" ? ["bc1q", "bc1p"] : ["tb1q", "tb1p"];
-    if (!validPrefixes.some((p) => addr.toLowerCase().startsWith(p))) {
-      setError(
-        `Invalid address for ${network}. Expected ${validPrefixes.join(" or ")} prefix.`
-      );
+    const addrError = validateRecipient(addr, network);
+    if (addrError) {
+      setError(addrError);
       return;
     }
-    const sats = parseInt(amount, 10);
-    if (isNaN(sats) || sats <= 0) {
-      setError("Amount must be a positive number of satoshis.");
+    // Number() rather than parseInt(): parseInt("1e5") silently yields 1.
+    const sats = Number(amount);
+    if (!Number.isSafeInteger(sats) || sats <= 0) {
+      setError("Amount must be a whole, positive number of satoshis.");
       return;
     }
-    const fee = parseFloat(feeRate);
-    if (isNaN(fee) || fee <= 0) {
+    const fee = Number(feeRate);
+    if (!Number.isFinite(fee) || fee <= 0) {
       setError("Fee rate must be a positive number.");
+      return;
+    }
+    if (fee > MAX_FEE_RATE_SAT_VB) {
+      setError(`Fee rate ${fee} sat/vB looks wrong (max ${MAX_FEE_RATE_SAT_VB}).`);
       return;
     }
 
@@ -68,18 +85,19 @@ export default function SendPage() {
     setStep("loading");
 
     try {
-      const mnemonic = sessionStorage.getItem("bw_mnemonic")!;
+      const mnemonic = sessionStorage.getItem("bw_mnemonic");
+      if (!mnemonic) throw new Error("No wallet in this session");
       const net = (sessionStorage.getItem("bw_network") || "testnet") as Network;
       const seed = await mnemonicToSeed(mnemonic);
-      const address = deriveAddress(seed, net, 0, 0);
-      const changeAddr = deriveChangeAddress(seed, net, 0, 0);
+      const receiveKey = deriveKey(seed, net, false, 0);
+      const changeKey = deriveKey(seed, net, true, 0);
 
-      const utxos = await fetchUtxos(address, net);
+      const utxos = await fetchUtxos(receiveKey.address, net);
       const summary = buildSendSummary({
-        recipient: recipient.trim(),
+        recipient: addr,
         amountSats: sats,
         feeRateSatVb: fee,
-        changeAddress: changeAddr,
+        changeAddress: changeKey.address,
         utxos,
         network: net,
       });
@@ -90,7 +108,35 @@ export default function SendPage() {
         return;
       }
 
-      setTxSummary(summary);
+      // The signer verifies every input against its previous transaction,
+      // so fetch the raw hex of each funding transaction.
+      const prevTxHexes = await Promise.all(
+        summary.inputs.map((inp) => fetchTxHex(inp.txid, net))
+      );
+
+      // Build the real BIP174 PSBT the signer consumes. All selected UTXOs
+      // belong to the first receive key, whose script goes into witness_utxo.
+      const built = buildUnsignedPsbt({
+        inputs: summary.inputs.map((inp, i) => ({ ...inp, prevTxHex: prevTxHexes[i] })),
+        inputKey: receiveKey,
+        outputs: summary.outputs,
+        network: net,
+      });
+
+      // Remember what we built so the receive page can verify the signed
+      // PSBT is for this exact transaction.
+      sessionStorage.setItem(PENDING_TXID_KEY, built.txid);
+      sessionStorage.setItem(PENDING_PSBT_KEY, built.psbtHex);
+
+      setTxSummary({
+        inputs: summary.inputs,
+        outputs: summary.outputs,
+        fee: Number(built.fee),
+        change: summary.change,
+      });
+      setUnsigned(built);
+      setFrames(encodeFrames(built.psbt));
+      setCopied(false);
       setStep("review");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to build transaction");
@@ -102,19 +148,22 @@ export default function SendPage() {
     if (step === "review") {
       setStep("form");
       setTxSummary(null);
+      setUnsigned(null);
+      setFrames([]);
     } else {
       router.push("/wallet");
     }
   }
 
-  // Build QR payload for the signer
-  const qrPayload = txSummary
-    ? JSON.stringify({
-        inputs: txSummary.inputs,
-        outputs: txSummary.outputs,
-        network,
-      })
-    : "";
+  async function copyHex() {
+    if (!unsigned) return;
+    try {
+      await navigator.clipboard.writeText(unsigned.psbtHex);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return (
     <SessionGuard>
@@ -147,6 +196,7 @@ export default function SendPage() {
                 id="amount"
                 type="number"
                 min="1"
+                step="1"
                 value={amount}
                 onChange={(e) => {
                   setAmount(e.target.value);
@@ -191,12 +241,12 @@ export default function SendPage() {
           <div className="card">
             <h2>Fetching UTXOs...</h2>
             <p style={{ color: "#777" }}>
-              Querying Esplora for available UTXOs and building the transaction.
+              Querying Esplora for available UTXOs and building the PSBT.
             </p>
           </div>
         )}
 
-        {step === "review" && txSummary && (
+        {step === "review" && txSummary && unsigned && (
           <>
             <div className="card">
               <h2>Transaction Summary</h2>
@@ -207,26 +257,26 @@ export default function SendPage() {
                   <tr>
                     <td style={{ color: "#777", padding: "0.4rem 0" }}>To</td>
                     <td className="mono" style={{ padding: "0.4rem 0", wordBreak: "break-all" }}>
-                      {recipient}
+                      {recipient.trim()}
                     </td>
                   </tr>
                   <tr>
                     <td style={{ color: "#777", padding: "0.4rem 0" }}>Amount</td>
                     <td style={{ padding: "0.4rem 0" }}>
-                      {parseInt(amount, 10).toLocaleString()} sats
+                      {formatSats(txSummary.outputs[0].value)} sats
                     </td>
                   </tr>
                   <tr>
                     <td style={{ color: "#777", padding: "0.4rem 0" }}>Fee</td>
                     <td style={{ padding: "0.4rem 0" }}>
-                      {txSummary.fee.toLocaleString()} sats ({feeRate} sat/vB)
+                      {formatSats(txSummary.fee)} sats ({feeRate} sat/vB)
                     </td>
                   </tr>
                   <tr>
                     <td style={{ color: "#777", padding: "0.4rem 0" }}>Change</td>
                     <td style={{ padding: "0.4rem 0" }}>
                       {txSummary.change > 0
-                        ? `${txSummary.change.toLocaleString()} sats`
+                        ? `${formatSats(txSummary.change)} sats`
                         : "none (dust absorbed into fee)"}
                     </td>
                   </tr>
@@ -240,6 +290,12 @@ export default function SendPage() {
                     <td style={{ color: "#777", padding: "0.4rem 0" }}>Network</td>
                     <td style={{ padding: "0.4rem 0" }}>{network}</td>
                   </tr>
+                  <tr>
+                    <td style={{ color: "#777", padding: "0.4rem 0" }}>Txid</td>
+                    <td className="mono" style={{ padding: "0.4rem 0", wordBreak: "break-all", fontSize: "0.8rem" }}>
+                      {unsigned.txid}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -252,33 +308,40 @@ export default function SendPage() {
                     {inp.txid.slice(0, 8)}...:{inp.vout}
                   </span>
                   <span style={{ marginLeft: "0.5rem" }}>
-                    {inp.value.toLocaleString()} sats
+                    {formatSats(inp.value)} sats
                   </span>
                 </div>
               ))}
             </div>
 
             <div className="card">
-              <h2>QR Code for Signer</h2>
+              <h2>Unsigned PSBT for Signer</h2>
               <p style={{ color: "#777", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
-                Scan this with your air-gapped signer to construct and sign the
-                transaction.
+                Scan with the air-gapped signer. {frames.length > 1
+                  ? `The PSBT spans ${frames.length} QR frames; they cycle automatically.`
+                  : "Single QR frame."}
               </p>
-              <QrDisplay
-                data={qrPayload}
-                size={280}
-                label="Transaction data for signer"
-              />
+              <QrDisplay frames={frames} size={280} label="BIP174 PSBT (binary, multi-frame)" />
             </div>
 
             <div className="card">
-              <h2>Raw Transaction Data</h2>
+              <h2>PSBT Hex (manual entry fallback)</h2>
+              <p style={{ color: "#777", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+                If the camera cannot read the QR, type this into the signer&apos;s
+                manual entry screen. It must start with 70736274ff.
+              </p>
               <div className="hex-display" style={{ fontSize: "0.75rem" }}>
-                {qrPayload}
+                {unsigned.psbtHex}
               </div>
+              <button className="btn" style={{ marginTop: "0.75rem" }} onClick={copyHex}>
+                {copied ? "Copied" : "Copy PSBT hex"}
+              </button>
             </div>
 
             <div className="btn-group">
+              <button className="btn btn-primary" onClick={() => router.push("/receive")}>
+                Next: Receive Signed PSBT
+              </button>
               <button className="btn" onClick={handleBack}>
                 Edit Transaction
               </button>

@@ -13,11 +13,18 @@ export function isSessionExpired(): boolean {
   return Date.now() - parseInt(last, 10) > SESSION_TIMEOUT_MS;
 }
 
+/** sessionStorage key: txid of the unsigned PSBT built in this session. */
+export const PENDING_TXID_KEY = "bw_unsigned_txid";
+/** sessionStorage key: hex of the unsigned PSBT built in this session. */
+export const PENDING_PSBT_KEY = "bw_unsigned_psbt";
+
 /** Clear all wallet data from sessionStorage. */
 export function clearSession(): void {
   sessionStorage.removeItem("bw_mnemonic");
   sessionStorage.removeItem("bw_network");
   sessionStorage.removeItem("bw_source");
+  sessionStorage.removeItem(PENDING_TXID_KEY);
+  sessionStorage.removeItem(PENDING_PSBT_KEY);
   sessionStorage.removeItem(TIMESTAMP_KEY);
 }
 

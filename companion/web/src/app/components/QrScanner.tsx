@@ -4,29 +4,66 @@ import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 
 interface QrScannerProps {
-  onScan: (data: string) => void;
+  /**
+   * Called for every decoded QR code. Return `true` when the payload is
+   * complete to stop the camera; return `false`/nothing to keep scanning
+   * (multi-frame payloads from the signer need several codes).
+   */
+  onScan: (data: string) => boolean | void;
   onError?: (error: string) => void;
+  /** Optional progress text shown under the viewfinder while scanning. */
+  status?: string;
 }
 
 /** Webcam-based QR code scanner using html5-qrcode. */
-export default function QrScanner({ onScan, onError }: QrScannerProps) {
+export default function QrScanner({ onScan, onError, status }: QrScannerProps) {
   const [scanning, setScanning] = useState(false);
-  const [started, setStarted] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const stoppingRef = useRef(false);
+  // Always call the latest callback: html5-qrcode captures the one passed to
+  // start(), which would otherwise see stale React state.
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
+
+  async function stopScanner() {
+    const scanner = scannerRef.current;
+    if (!scanner || stoppingRef.current) return;
+    stoppingRef.current = true;
+    try {
+      await scanner.stop();
+    } catch {
+      // Already stopped
+    }
+    try {
+      scanner.clear();
+    } catch {
+      // Element may already be gone
+    }
+    scannerRef.current = null;
+    stoppingRef.current = false;
+    setScanning(false);
+  }
 
   useEffect(() => {
     return () => {
       // Cleanup on unmount
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current.clear();
+      const scanner = scannerRef.current;
+      if (scanner) {
+        scanner.stop().catch(() => {}).finally(() => {
+          try {
+            scanner.clear();
+          } catch {
+            // ignore
+          }
+        });
+        scannerRef.current = null;
       }
     };
   }, []);
 
   async function startScanning() {
-    if (!containerRef.current) return;
+    if (!containerRef.current || scannerRef.current) return;
 
     const scannerId = "qr-scanner-container";
     containerRef.current.id = scannerId;
@@ -43,28 +80,21 @@ export default function QrScanner({ onScan, onError }: QrScannerProps) {
           qrbox: { width: 250, height: 250 },
         },
         (decodedText) => {
-          onScan(decodedText);
-          scanner.stop().catch(() => {});
-          setScanning(false);
-          setStarted(false);
+          if (stoppingRef.current) return;
+          const done = onScanRef.current(decodedText);
+          if (done === true) {
+            void stopScanner();
+          }
         },
         () => {
           // QR not found in this frame -- ignore
         }
       );
-      setStarted(true);
     } catch (err) {
+      scannerRef.current = null;
       setScanning(false);
       const msg = err instanceof Error ? err.message : "Camera access denied";
       if (onError) onError(msg);
-    }
-  }
-
-  async function stopScanning() {
-    if (scannerRef.current && started) {
-      await scannerRef.current.stop().catch(() => {});
-      setScanning(false);
-      setStarted(false);
     }
   }
 
@@ -81,19 +111,25 @@ export default function QrScanner({ onScan, onError }: QrScannerProps) {
           overflow: "hidden",
         }}
       />
+      {scanning && status && (
+        <p style={{ color: "#0ff", fontSize: "0.85rem", textAlign: "center", marginTop: "0.5rem" }}>
+          {status}
+        </p>
+      )}
       <div style={{ textAlign: "center", marginTop: "0.75rem" }}>
         {!scanning ? (
-          <button className="btn btn-primary" onClick={startScanning}>
+          <button className="btn btn-primary" type="button" onClick={startScanning}>
             Start Camera Scan
           </button>
         ) : (
-          <button className="btn" onClick={stopScanning}>
+          <button className="btn" type="button" onClick={stopScanner}>
             Stop Scanning
           </button>
         )}
       </div>
       <p style={{ color: "#555", fontSize: "0.8rem", textAlign: "center", marginTop: "0.5rem" }}>
-        Point your camera at a QR code from the air-gapped signer.
+        Point your camera at the QR code(s) from the air-gapped signer. Keep
+        scanning until every frame has been captured.
       </p>
     </div>
   );
