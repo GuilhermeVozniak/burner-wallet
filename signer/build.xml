@@ -28,7 +28,7 @@
     <!-- MIDlet metadata -->
     <property name="midlet.name" value="BurnerWallet"/>
     <property name="midlet.vendor" value="Guilherme Vozniak"/>
-    <property name="midlet.version" value="0.1.0"/>
+    <property name="midlet.version" value="0.2.0"/>
     <property name="midlet.class" value="org.burnerwallet.ui.BurnerWalletMIDlet"/>
 
     <!-- JAR size budget for Nokia C1-01 (1 MB limit) -->
