@@ -10,7 +10,24 @@ function hash160(data: Uint8Array): Uint8Array {
   return ripemd160(sha256(data));
 }
 
-/** Get the Esplora API base URL for a network. */
+/**
+ * Normalize a user-entered mnemonic: lowercase, collapse all whitespace
+ * (newlines, tabs, double spaces) to single spaces, trim.
+ *
+ * BIP39 seed derivation hashes the exact phrase string, so a stray newline
+ * or double space would silently produce a different wallet.
+ */
+function normalizeMnemonic(phrase: string): string {
+  return phrase.trim().toLowerCase().split(/\s+/).join(" ");
+}
+
+/**
+ * Get the Esplora API base URL for a network.
+ *
+ * "testnet" means testnet3, matching the Rust core (`Network::Testnet`), the
+ * TUI default, and the web/extension/mobile companions. All companions must
+ * query the same chain or the same wallet will show different balances.
+ */
 function esploraUrl(network: string): string {
   switch (network) {
     case "mainnet":
@@ -18,7 +35,7 @@ function esploraUrl(network: string): string {
     case "signet":
       return "https://mempool.space/signet/api";
     default:
-      return "https://mempool.space/testnet4/api";
+      return "https://mempool.space/testnet/api";
   }
 }
 
@@ -35,9 +52,14 @@ contextBridge.exposeInMainWorld("burnerAPI", {
     return bip39.generateMnemonic(strength);
   },
 
+  /** Normalize whitespace/case of a user-entered mnemonic. */
+  normalizeMnemonic(phrase: string): string {
+    return normalizeMnemonic(phrase);
+  },
+
   /** Validate a BIP39 mnemonic phrase. */
   validateMnemonic(phrase: string): boolean {
-    return bip39.validateMnemonic(phrase);
+    return bip39.validateMnemonic(normalizeMnemonic(phrase));
   },
 
   /** Derive a 64-byte seed from a mnemonic and optional passphrase. */
@@ -45,7 +67,7 @@ contextBridge.exposeInMainWorld("burnerAPI", {
     phrase: string,
     passphrase: string = ""
   ): Promise<Uint8Array> {
-    const buf = await bip39.mnemonicToSeed(phrase, passphrase);
+    const buf = await bip39.mnemonicToSeed(normalizeMnemonic(phrase), passphrase);
     return new Uint8Array(buf);
   },
 
