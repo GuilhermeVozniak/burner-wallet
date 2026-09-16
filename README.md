@@ -5,6 +5,8 @@
 A security-first, offline-signing Bitcoin wallet built for Java ME (Series 40) devices. The Nokia C1-01 serves as a strict air-gapped signer — it never touches the internet. A multi-platform companion ecosystem handles chain access, transaction construction, and broadcasting.
 
 > **Status:** Pre-alpha — Architecture & specification phase. Not yet suitable for real funds.
+>
+> **Device compatibility:** the signer JAR references only CLDC 1.1 / MIDP 2.0 classes (`cd signer && ant cldc-audit` enforces this in CI) and the full wallet flow runs in the FreeJ2ME-Plus emulator, but it has not yet been executed on a physical Nokia C1-01.
 
 [![CI Signer](https://github.com/GuilhermeVozniak/burner-wallet/actions/workflows/ci-signer.yml/badge.svg)](https://github.com/GuilhermeVozniak/burner-wallet/actions/workflows/ci-signer.yml)
 [![CI Companion](https://github.com/GuilhermeVozniak/burner-wallet/actions/workflows/ci-companion.yml/badge.svg)](https://github.com/GuilhermeVozniak/burner-wallet/actions/workflows/ci-companion.yml)
@@ -84,7 +86,7 @@ Burner Wallet turns a Nokia C1-01 (or compatible Series 40 device) into a dedica
 - **Minimal attack surface** — Java ME sandbox on a device with no OS-level app store, no browser, no background processes
 - **Recovery via mnemonic** — Standard 12/24-word backup compatible with any BIP39 wallet
 - **BIP39 passphrase** — Optional 25th-word support for additional seed protection and plausible deniability
-- **Encrypted key storage** — Seeds encrypted at rest in MIDP RecordStore with PIN-derived key
+- **Encrypted key storage** — Seeds encrypted at rest in MIDP RecordStore with a PIN-derived key (random salt/IV, encrypt-then-MAC, wipe after 10 wrong PINs)
 - **Multiple transport options** — QR (primary), Bluetooth OBEX, MicroSD, manual entry as fallbacks
 - **Multi-platform companion** — TUI, desktop (Electron), web (Next.js), Chrome extension, mobile (React Native)
 - **Deterministic builds** — Reproducible JAR output for independent verification
@@ -172,7 +174,7 @@ All companion apps share a common Rust core library (`companion/core`) built on 
 | Runtime | Java ME (CLDC 1.1 / MIDP 2.0) | Only runtime available on Nokia C1-01 |
 | UI | LCDUI | Native Series 40 UI toolkit — smallest footprint, most reliable |
 | Build | Apache Ant | Standard Java ME build tool with JAD/JAR packaging |
-| Crypto | Bouncy Castle Lightweight API (J2ME) | Audited, widely used, J2ME-compatible subset |
+| Crypto | In-house CLDC 1.1 implementation (`signer/src/org/burnerwallet/core/crypto`) | Bouncy Castle's J2SE builds need `BigInteger`, `HashMap` and `SecureRandom`, which the phone lacks. Verified against BIP/FIPS vectors and differential-tested against Bouncy Castle |
 
 ### Companion Core
 
@@ -508,7 +510,7 @@ Contributions are welcome. This is an early-stage project with significant work 
 
 ### Areas Where Help Is Needed
 
-- **Java ME crypto** — Porting/adapting Bouncy Castle lightweight API for CLDC 1.1
+- **Java ME crypto** — Review and hardening of the in-house CLDC 1.1 primitives (constant-time improvements, on-device performance)
 - **Rust companion core** — rust-bitcoin/BDK integration, PSBT construction, WASM compilation
 - **J2ME testing** — Emulator automation, CI integration for Java ME builds
 - **QR protocol** — Multi-frame encoding strategy for larger PSBTs
@@ -554,7 +556,7 @@ Contributions are welcome. This is an early-stage project with significant work 
 ## Acknowledgments
 
 - [Bitcoin Improvement Proposals](https://github.com/bitcoin/bips) — The BIP standards this project implements
-- [Bouncy Castle](https://www.bouncycastle.org/) — Crypto library foundation
+- [Bouncy Castle](https://www.bouncycastle.org/) — Differential-test oracle for the signer's crypto primitives
 - [rust-bitcoin](https://github.com/rust-bitcoin/rust-bitcoin) + [BDK](https://bitcoindevkit.org/) — Companion core Bitcoin libraries
 - The air-gapped wallet community ([SeedSigner](https://seedsigner.com/), [Krux](https://selfcustody.github.io/krux/), [Passport](https://foundationdevices.com/)) for proving the concept
 

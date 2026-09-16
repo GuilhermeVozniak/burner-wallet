@@ -152,10 +152,10 @@ Companion                          Signer
 
 | Attribute | Detail |
 |-----------|--------|
-| **Vector** | Attacker compromises the build pipeline, CI server, or distribution channel to deliver a trojanized signer JAR. Alternatively, attacker modifies the Bouncy Castle dependency or ProGuard configuration. |
-| **Likelihood** | LOW-MEDIUM -- Supply chain attacks are increasingly common. The signer uses a third-party crypto library (Bouncy Castle) and a bytecode optimizer (ProGuard). |
+| **Vector** | Attacker compromises the build pipeline, CI server, or distribution channel to deliver a trojanized signer JAR. Alternatively, attacker modifies the crypto sources or ProGuard configuration. |
+| **Likelihood** | LOW-MEDIUM -- Supply chain attacks are increasingly common. The signer JAR is built from first-party sources only (no third-party runtime dependency) plus a bytecode optimizer (ProGuard). |
 | **Impact** | CRITICAL -- A backdoored JAR could exfiltrate the seed through a covert channel (e.g., encoding key bits in QR code padding, biased nonce generation enabling key recovery). |
-| **Mitigation** | (1) Reproducible/deterministic builds enable independent verification. (2) SHA256 checksums published for all release artifacts. (3) ProGuard config is version-controlled and auditable. (4) CI builds run on GitHub-hosted runners with pinned dependency versions. (5) Bouncy Castle `bcprov-jdk14` JAR is committed to the repository (not fetched at build time). |
+| **Mitigation** | (1) Reproducible/deterministic builds enable independent verification. (2) SHA256 checksums published for all release artifacts. (3) ProGuard config is version-controlled and auditable. (4) CI builds run on GitHub-hosted runners with pinned dependency versions. (5) The JAR has no third-party runtime dependency; Bouncy Castle is only a test-time oracle, committed to the repository with a pinned hash. |
 | **Residual risk** | Reproducible builds are a goal but not yet independently verified. Until at least 2 independent parties confirm build reproducibility, users must trust the release artifacts. |
 
 ### 4.8 Key Generation Entropy
@@ -185,8 +185,8 @@ Companion                          Signer
 | **Vector** | Timing or power analysis of ECDSA signing operations on the Nokia device to recover the private key or per-signature nonce. |
 | **Likelihood** | LOW -- Requires specialized equipment and physical proximity during signing. The Nokia's simple hardware may actually make power analysis easier than on modern SoCs. |
 | **Impact** | CRITICAL -- Nonce recovery from a single signature reveals the private key (ECDSA nonce reuse or partial nonce leakage). |
-| **Mitigation** | (1) RFC 6979 deterministic nonce generation eliminates nonce reuse risk across multiple signatures for the same key. (2) Low-S normalization (BIP 62/146). (3) Bouncy Castle's `ECDSASigner` with `HMacDSAKCalculator` is the signing implementation. (4) Private key bytes are zero-filled immediately after signing. |
-| **Residual risk** | Bouncy Castle's lightweight ECDSA implementation is not constant-time. Scalar multiplication timing may leak key bits. Java ME provides no low-level control over CPU caches, branch prediction, or memory access patterns. This is a documented limitation of the J2ME platform. |
+| **Mitigation** | (1) RFC 6979 deterministic nonce generation eliminates nonce reuse risk across multiple signatures for the same key. (2) Low-S normalization (BIP 62/146). (3) The in-house implementation multiplies scalars with a Montgomery ladder (one addition and one doubling per bit regardless of the key) and inverts with Fermat exponentiation, so the sequence of point operations does not depend on secret bits. (4) Private key bytes are zero-filled immediately after signing. |
+| **Residual risk** | The field arithmetic still performs data-dependent conditional subtractions, the addition formulas branch on the doubling case, and AES uses table lookups, so the implementation is not constant-time in the strict sense. Java ME provides no low-level control over CPU caches, branch prediction, or memory access patterns. This is a documented limitation of the J2ME platform. |
 
 ### 4.11 Esplora API Trust
 
@@ -224,7 +224,7 @@ Companion                          Signer
 | PIN brute force -- lockout | Progressive lockout after failed attempts | Not implemented |
 | ECDSA nonce reuse | RFC 6979 deterministic nonce generation | Implemented |
 | ECDSA low-S | BIP 62/146 low-S normalization | Implemented |
-| ECDSA timing side channel | Constant-time scalar multiplication | Not feasible on J2ME |
+| ECDSA timing side channel | Montgomery-ladder scalar multiplication, no secret-dependent branches in point operations | Partially mitigated |
 | Key material in memory | Zero-fill private keys and derived keys after use | Implemented |
 | Entropy quality | SHA-256 hashing of 32 keypress timing deltas | Implemented |
 | Entropy audit | Independent entropy quality assessment | Not implemented |
@@ -232,10 +232,15 @@ Companion                          Signer
 | Supply chain -- dependencies | BC JAR committed to repo; Rust deps version-locked | Implemented |
 | Supply chain -- companion web | Audited crypto libs (@noble, @scure); CSP headers | Partially implemented |
 | Esplora trust -- balance | User-configurable Esplora URL; self-hosted option | Implemented |
-| Esplora trust -- fees | Max fee rate check (25,000 sat/vB) on finalization | Implemented |
+| Esplora trust -- fees | User-entered fee rate capped at 1,000 sat/vB (TUI and web); rust-bitcoin's `extract_tx` additionally refuses anything above 25,000 sat/vB; the signer shows the absolute fee for review | Implemented |
 | Esplora trust -- privacy | Self-hosted node option | Documented, not enforced |
 | QR eavesdropping | Brief display window; no key material in QR payloads | Implemented |
 | QR injection | PSBT validation + transaction review on signer | Implemented |
+| Sighash substitution (companion sets SIGHASH_NONE/SINGLE/ANYONECANPAY) | Signer refuses any input whose sighash type is not SIGHASH_ALL | Implemented |
+| Input amount lie / multi-round fee attack | Signer requires `non_witness_utxo` and verifies txid, amount and script against `witness_utxo` before signing | Implemented |
+| Companion finalizes unverified signatures | Companions verify each partial signature before finalizing (miniscript interpreter in the TUI, explicit ECDSA verification over the BIP143 digest in the web app); the signed PSBT must match the pending unsigned PSBT | Implemented |
+| Seed blob tampering / bit flips | Encrypt-then-MAC on the seed record; corrupted records are reported, not decrypted | Implemented |
+| Offline PIN brute force from an RMS dump | Random per-wallet salt (no precomputed tables); on-device 10-attempt wipe; a numeric PIN still cannot resist a determined offline attack | Partially mitigated |
 | Multi-frame integrity | Indexed frames with total count in header | Implemented |
 | Bluetooth stack exploits | QR is default; BT is opt-in fallback only | By design |
 | Web companion XSS | React/Next.js built-in escaping; CSP headers | Partially implemented |
@@ -268,7 +273,8 @@ The following items must be completed before any release is promoted as suitable
 
 | Item | Status | Notes |
 |------|--------|-------|
-| All BIP test vectors pass on target device (Nokia C1-01) | Pending | Currently verified on emulator and desktop JDK. On-device testing required. |
+| Signer JAR references only CLDC 1.1 / MIDP 2.0 classes | Implemented | Bouncy Castle removed from the JAR in favor of in-house primitives; `ant cldc-audit` enforces zero unresolved references in CI. Execution on physical hardware still pending. |
+| All BIP test vectors pass on target device (Nokia C1-01) | Pending | Currently verified on desktop JDK and, for the full UI flow, the FreeJ2ME-Plus emulator. Depends on the item above. |
 | Crypto implementation reviewed by independent party | Not started | Covers: secp256k1, ECDSA, BIP32/39/44/84, BIP143 sighash, PSBT signing. |
 | Deterministic build verified by at least 2 independent parties | Not started | Signer JAR reproducibility is the priority. |
 | Secure deletion behavior validated on target hardware | Not started | MIDP RecordStore deletion semantics on Nokia flash storage are undocumented. |
@@ -288,7 +294,7 @@ The following items must be completed before any release is promoted as suitable
 
 The following risks cannot be fully mitigated by the current design and are accepted as inherent limitations:
 
-**Non-constant-time ECDSA on J2ME.** Bouncy Castle's lightweight secp256k1 implementation does not guarantee constant-time scalar multiplication. The J2ME platform provides no primitives for constant-time operations, cache-line control, or branch-free arithmetic. An attacker with physical access and timing/power measurement equipment may be able to extract private keys during signing. This is an inherent limitation of using Java ME for cryptographic signing. Mitigation: RFC 6979 eliminates nonce reuse, and the device is designed to be used in private settings.
+**Non-constant-time ECDSA on J2ME.** The in-house secp256k1 implementation uses a Montgomery ladder, but its field arithmetic and AES table lookups are not constant-time in the strict sense. The J2ME platform provides no primitives for constant-time operations, cache-line control, or branch-free arithmetic. An attacker with physical access and timing/power measurement equipment may be able to extract private keys during signing. This is an inherent limitation of using Java ME for cryptographic signing. Mitigation: RFC 6979 eliminates nonce reuse, and the device is designed to be used in private settings.
 
 **PIN weakness against offline brute force.** The PBKDF2 iteration count (5000) is calibrated for Nokia hardware performance, not for resistance against offline attack. An attacker who extracts the encrypted seed blob from flash storage can brute-force a short numeric PIN in minutes on commodity hardware. The BIP39 passphrase is the real defense against this scenario. Users who do not set a passphrase rely solely on the PIN, which provides weak protection against a determined physical attacker.
 
@@ -310,12 +316,14 @@ The following risks cannot be fully mitigated by the current design and are acce
 
 | Primitive | Implementation | Usage |
 |-----------|---------------|-------|
-| AES-256-CBC | Bouncy Castle `AESLightEngine` + `CBCBlockCipher` + PKCS7 | Seed encryption at rest |
-| PBKDF2-HMAC-SHA512 | Bouncy Castle via `HashUtils` | PIN to AES key derivation |
-| SHA-256 | Bouncy Castle | PIN hash verification, entropy mixing, HASH160 |
-| RIPEMD-160 | Bouncy Castle | HASH160 (with SHA-256) for address derivation |
-| ECDSA (secp256k1) | Bouncy Castle `ECDSASigner` + `HMacDSAKCalculator` | Transaction signing (RFC 6979) |
-| HMAC-SHA512 | Bouncy Castle | BIP32 key derivation, BIP39 seed derivation |
+| AES-256-CBC | In-house `Aes` (S-box derived from GF(2^8) at class load) + CBC/PKCS7 in `AesUtils` | Seed encryption at rest |
+| PBKDF2-HMAC-SHA512 | In-house `Pbkdf2` over `Hmac`(`Sha512`) via `HashUtils` | PIN to AES key derivation, BIP39 seed |
+| SHA-256 | In-house `Sha256` | HMAC-SHA256 seed-blob MAC (doubles as PIN check), entropy mixing, HASH160, sighash |
+| RIPEMD-160 | In-house `Ripemd160` | HASH160 (with SHA-256) for address derivation |
+| ECDSA (secp256k1) | In-house `Secp256k1` over `Fe` and `EcPoint` (RFC 6979 via `Hmac`(`Sha256`), Montgomery ladder, low-S) | Transaction signing |
+| HMAC-SHA512 | In-house `Hmac`(`Sha512`) | BIP32 key derivation, BIP39 seed derivation |
+
+All signer primitives are pure Java 1.4 / CLDC 1.1 code in `signer/src/org/burnerwallet/core/crypto`, with no `java.math.BigInteger`. They are checked against FIPS/RFC/BIP known answers (`CryptoKatTest`) and differential-tested byte-for-byte against Bouncy Castle on random inputs (`CryptoOracleTest`, test classpath only). An independent review of this code is on the pre-mainnet checklist.
 
 ## Appendix B: Storage Format
 
@@ -323,8 +331,8 @@ The signer stores three records in the MIDP RecordStore named `"bw"`:
 
 | Record | Contents |
 |--------|----------|
-| 1 -- Seed blob | `salt (16B) \|\| IV (16B) \|\| iterations (4B) \|\| ciphertext (variable)` |
-| 2 -- PIN hash | `SHA-256(PBKDF2_derived_key)` -- 32 bytes |
-| 3 -- Config | `network (1B) \|\| hasPassphrase (1B) \|\| addressIndex (4B)` |
+| 1 -- Seed blob | `version (1B = 0x02) \|\| salt (16B) \|\| IV (16B) \|\| iterations (4B) \|\| ciphertext (variable) \|\| HMAC-SHA256 (32B)`; salt/IV are random per wallet, the MAC is verified before decryption and doubles as the PIN check |
+| 2 -- Config | `network (1B) \|\| hasPassphrase (1B) \|\| addressIndex (4B BE)` |
+| 3 -- Failed PIN attempts | 4-byte counter; reset on successful unlock, wallet wiped when it reaches 10 |
 
 The plaintext encrypted in record 1 is: `seed (64B) \|\| passphrase_length (2B) \|\| passphrase (variable)`.
