@@ -11,8 +11,8 @@
 use wasm_bindgen::prelude::*;
 
 use bip39::Mnemonic;
-use bitcoin::bip32::{ChildNumber, DerivationPath, Xpriv, Xpub};
 use bitcoin::address::{Address, KnownHrp};
+use bitcoin::bip32::{ChildNumber, DerivationPath, Xpriv, Xpub};
 use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Network, NetworkKind};
@@ -140,8 +140,8 @@ pub fn serialize_psbt_hex(psbt_base64: &str) -> Result<String, JsValue> {
     let raw = STANDARD
         .decode(psbt_base64)
         .map_err(|e| JsValue::from_str(&format!("Invalid base64: {}", e)))?;
-    let psbt = Psbt::deserialize(&raw)
-        .map_err(|e| JsValue::from_str(&format!("Invalid PSBT: {}", e)))?;
+    let psbt =
+        Psbt::deserialize(&raw).map_err(|e| JsValue::from_str(&format!("Invalid PSBT: {}", e)))?;
     let bytes = psbt.serialize();
     Ok(hex::encode(bytes))
 }
@@ -151,8 +151,8 @@ pub fn serialize_psbt_hex(psbt_base64: &str) -> Result<String, JsValue> {
 /// This is useful for interoperability with wallets that expect base64 PSBTs.
 #[wasm_bindgen]
 pub fn deserialize_psbt_base64(hex_str: &str) -> Result<String, JsValue> {
-    let bytes = hex::decode(hex_str)
-        .map_err(|e| JsValue::from_str(&format!("Invalid hex: {}", e)))?;
+    let bytes =
+        hex::decode(hex_str).map_err(|e| JsValue::from_str(&format!("Invalid hex: {}", e)))?;
     let psbt = Psbt::deserialize(&bytes)
         .map_err(|e| JsValue::from_str(&format!("Invalid PSBT bytes: {}", e)))?;
     // Re-serialize to binary and base64 encode

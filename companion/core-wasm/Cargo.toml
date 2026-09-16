@@ -23,3 +23,11 @@ getrandom = { version = "0.2", features = ["js"] }
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 hex = "0.4"
+
+# Small, panic-free WASM binaries: a panic in the browser would otherwise
+# carry an unwinder and formatting machinery for no benefit.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

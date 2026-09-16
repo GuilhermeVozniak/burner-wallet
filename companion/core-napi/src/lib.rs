@@ -41,8 +41,7 @@ pub fn validate_mnemonic(phrase: String) -> bool {
 /// The passphrase can be empty for no passphrase.
 #[napi]
 pub fn mnemonic_to_seed(phrase: String, passphrase: String) -> napi::Result<Vec<u8>> {
-    let m = mnemonic::from_phrase(&phrase)
-        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+    let m = mnemonic::from_phrase(&phrase).map_err(|e| napi::Error::from_reason(e.to_string()))?;
     let seed = mnemonic::to_seed(&m, &passphrase);
     Ok(seed.to_vec())
 }
