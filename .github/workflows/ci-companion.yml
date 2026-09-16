@@ -74,7 +74,10 @@ jobs:
         working-directory: companion/core-wasm
         run: cargo test --locked
 
+      # Linux only: secp256k1-sys compiles C sources for the target, and the
+      # Apple/MSVC toolchains on the other runners have no wasm32 backend.
       - name: Check WASM bridge compiles for wasm32
+        if: runner.os == 'Linux'
         working-directory: companion/core-wasm
         run: cargo check --locked --target wasm32-unknown-unknown
 
