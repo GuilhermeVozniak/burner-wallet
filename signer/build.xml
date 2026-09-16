@@ -46,6 +46,7 @@
         <echo>
 Available targets:
   build      - Compile, preverify (ProGuard), and package the MIDlet
+  cldc-audit - Fail if the shrunk JAR needs classes the CLDC 1.1 phone lacks
   clean      - Remove all build artifacts
   test       - Run JUnit tests on JDK 8
   size-check - Verify JAR is within device budget
@@ -71,13 +72,12 @@ Available targets:
                destdir="${classes.dir}"
                source="1.4"
                target="1.4"
-               bootclasspath="${cldc.jar}:${midp.jar}:${rt.jar}"
+               bootclasspath="${cldc.jar}:${midp.jar}"
                includeantruntime="false"
                debug="true">
             <classpath>
                 <pathelement location="${midp.jar}"/>
                 <pathelement location="${cldc.jar}"/>
-                <pathelement location="${bc.jar}"/>
             </classpath>
         </javac>
     </target>
@@ -96,7 +96,6 @@ Available targets:
             description="Shrink and preverify with ProGuard -microedition">
         <proguard>
             -injars      ${build.dir}/${midlet.name}-unprocessed.jar
-            -injars      ${bc.jar}(!META-INF/**)
             -outjars     ${dist.dir}/${midlet.name}.jar
             -libraryjars ${cldc.jar}
             -libraryjars ${midp.jar}
@@ -105,10 +104,33 @@ Available targets:
             -optimizationpasses 3
             -allowaccessmodification
             -dontnote
-            -dontwarn
+            <!-- Warnings are fatal on purpose: with only the CLDC/MIDP stubs as
+                 libraries, any reference to a class the phone lacks fails the build. -->
             -keep public class * extends javax.microedition.midlet.MIDlet
             -keep class org.burnerwallet.** { *; }
         </proguard>
+    </target>
+
+    <!-- Device-compatibility audit: re-run ProGuard over the shrunk JAR with ONLY
+         the CLDC 1.1 / MIDP 2.0 stubs as libraries and warnings enabled. Every
+         "can't find referenced class" is a class the Nokia does not have (e.g.
+         java.math.BigInteger, java.util.HashMap, java.security.SecureRandom).
+         The target fails while any such reference exists. -->
+    <target name="cldc-audit" depends="preverify"
+            description="Fail if the shrunk JAR references classes missing from CLDC 1.1 / MIDP 2.0">
+        <proguard>
+            -forceprocessing
+            -injars      ${dist.dir}/${midlet.name}.jar
+            -outjars     ${build.dir}/cldc-audit.jar
+            -libraryjars ${cldc.jar}
+            -libraryjars ${midp.jar}
+            -dontoptimize
+            -dontobfuscate
+            -dontpreverify
+            -dontnote
+            -keep class ** { *; }
+        </proguard>
+        <echo>CLDC audit PASSED: no references to classes outside CLDC 1.1 / MIDP 2.0.</echo>
     </target>
 
     <!-- ============================================================ -->

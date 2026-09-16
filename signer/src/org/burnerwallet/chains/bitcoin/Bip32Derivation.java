@@ -1,7 +1,5 @@
 package org.burnerwallet.chains.bitcoin;
 
-import java.math.BigInteger;
-
 import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
 import org.burnerwallet.core.HashUtils;
@@ -50,10 +48,11 @@ public final class Bip32Derivation {
 
         byte[] privateKey = ByteArrayUtils.copyOfRange(hmac, 0, 32);
         byte[] chainCode = ByteArrayUtils.copyOfRange(hmac, 32, 64);
+        ByteArrayUtils.zeroFill(hmac);
 
-        // Validate the private key
-        BigInteger keyInt = new BigInteger(1, privateKey);
-        if (keyInt.signum() == 0 || keyInt.compareTo(Secp256k1.getN()) >= 0) {
+        // Validate the private key: 0 < key < n
+        if (!Secp256k1.isValidPrivateKey(privateKey)) {
+            ByteArrayUtils.zeroFill(privateKey);
             throw new CryptoError(CryptoError.ERR_DERIVATION_FAILED,
                 "Invalid master key derived from seed");
         }
@@ -62,6 +61,7 @@ public final class Bip32Derivation {
         byte[] keyData = new byte[33];
         keyData[0] = 0x00;
         System.arraycopy(privateKey, 0, keyData, 1, 32);
+        ByteArrayUtils.zeroFill(privateKey);
 
         // Master key: depth=0, parent fingerprint=0x00000000, child index=0
         byte[] parentFingerprint = new byte[4];
@@ -98,6 +98,7 @@ public final class Bip32Derivation {
             data[0] = 0x00;
             byte[] privKey = parent.getPrivateKeyBytes();
             System.arraycopy(privKey, 0, data, 1, 32);
+            ByteArrayUtils.zeroFill(privKey);
             ser32(index, data, 33);
         } else {
             // data = parentPubKey(33) || ser32(index)
@@ -108,35 +109,43 @@ public final class Bip32Derivation {
         }
 
         byte[] hmac = HashUtils.hmacSha512(parent.getChainCode(), data);
+        // The HMAC input held the parent private key (hardened case); wipe it.
+        ByteArrayUtils.zeroFill(data);
         byte[] hmacLeft = ByteArrayUtils.copyOfRange(hmac, 0, 32);
         byte[] hmacRight = ByteArrayUtils.copyOfRange(hmac, 32, 64);
-
-        BigInteger hmacLeftInt = new BigInteger(1, hmacLeft);
-        BigInteger n = Secp256k1.getN();
+        ByteArrayUtils.zeroFill(hmac);
 
         // Check hmacLeft >= n (invalid, extremely rare)
-        if (hmacLeftInt.compareTo(n) >= 0) {
+        if (!Secp256k1.isScalarBelowN(hmacLeft)) {
+            ByteArrayUtils.zeroFill(hmacLeft);
             throw new CryptoError(CryptoError.ERR_DERIVATION_FAILED,
                 "Derived key is invalid (hmacLeft >= n), try next index");
         }
 
-        // childKey = (hmacLeft + parentPrivateKey) mod n
-        BigInteger parentKeyInt = new BigInteger(1, parent.getPrivateKeyBytes());
-        BigInteger childKeyInt = hmacLeftInt.add(parentKeyInt).mod(n);
+        // childKey = (hmacLeft + parentPrivateKey) mod n, on wipeable byte arrays
+        byte[] parentPriv = parent.getPrivateKeyBytes();
+        byte[] childKeyBytes = Secp256k1.addScalarsModN(hmacLeft, parentPriv);
+        ByteArrayUtils.zeroFill(hmacLeft);
+        ByteArrayUtils.zeroFill(parentPriv);
 
         // Check childKey == 0 (invalid, extremely rare)
-        if (childKeyInt.signum() == 0) {
+        boolean zero = true;
+        for (int i = 0; i < childKeyBytes.length; i++) {
+            if (childKeyBytes[i] != 0) {
+                zero = false;
+                break;
+            }
+        }
+        if (zero) {
             throw new CryptoError(CryptoError.ERR_DERIVATION_FAILED,
                 "Derived key is zero, try next index");
         }
-
-        // Convert child key to 32-byte big-endian, zero-padded
-        byte[] childKeyBytes = toUnsigned32(childKeyInt);
 
         // Key data: 0x00 || childKeyBytes
         byte[] childKeyData = new byte[33];
         childKeyData[0] = 0x00;
         System.arraycopy(childKeyBytes, 0, childKeyData, 1, 32);
+        ByteArrayUtils.zeroFill(childKeyBytes);
 
         // Child chain code
         byte[] childChainCode = hmacRight;
@@ -261,25 +270,6 @@ public final class Bip32Derivation {
         out[offset + 1] = (byte) ((value >>> 16) & 0xFF);
         out[offset + 2] = (byte) ((value >>> 8) & 0xFF);
         out[offset + 3] = (byte) (value & 0xFF);
-    }
-
-    /**
-     * Convert a BigInteger to a 32-byte unsigned big-endian byte array.
-     * Pads with leading zeros or strips the leading sign byte as needed.
-     */
-    private static byte[] toUnsigned32(BigInteger value) {
-        byte[] bytes = value.toByteArray();
-        if (bytes.length == 32) {
-            return bytes;
-        } else if (bytes.length > 32) {
-            // Strip leading zero byte (sign byte from BigInteger)
-            return ByteArrayUtils.copyOfRange(bytes, bytes.length - 32, bytes.length);
-        } else {
-            // Pad with leading zeros
-            byte[] result = new byte[32];
-            System.arraycopy(bytes, 0, result, 32 - bytes.length, bytes.length);
-            return result;
-        }
     }
 
     /**

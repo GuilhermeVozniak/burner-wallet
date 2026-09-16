@@ -1,43 +1,28 @@
 package org.burnerwallet.chains.bitcoin;
 
-import java.math.BigInteger;
-
-import org.bouncycastle.asn1.sec.SECNamedCurves;
-import org.bouncycastle.asn1.x9.X9ECParameters;
-import org.bouncycastle.crypto.digests.SHA256Digest;
-import org.bouncycastle.crypto.params.ECDomainParameters;
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.crypto.signers.ECDSASigner;
-import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
-import org.bouncycastle.math.ec.ECPoint;
-
+import org.burnerwallet.core.ByteArrayUtils;
 import org.burnerwallet.core.CryptoError;
+import org.burnerwallet.core.crypto.EcPoint;
+import org.burnerwallet.core.crypto.Fe;
+import org.burnerwallet.core.crypto.Hmac;
+import org.burnerwallet.core.crypto.Sha256;
 
 /**
- * Secp256k1 elliptic curve operations using Bouncy Castle.
+ * Secp256k1 elliptic curve operations on the in-house CLDC-safe
+ * implementation ({@link EcPoint}, {@link Fe}); no Bouncy Castle and no
+ * java.math.BigInteger, neither of which exists on the target phone.
  *
- * Provides public key derivation, point arithmetic, ECDSA signing
- * (RFC 6979 deterministic nonce, BIP 62/146 low-S normalization),
- * signature verification, and DER encoding for Bitcoin.
+ * Provides public key derivation, point addition, scalar arithmetic for
+ * BIP32, ECDSA signing (RFC 6979 deterministic nonce, BIP 62/146 low-S
+ * normalization), signature verification, and DER encoding.
  * All public keys are returned in compressed format (33 bytes).
  *
  * Java 1.4 compatible (CLDC 1.1).
  */
 public final class Secp256k1 {
 
-    private static final X9ECParameters CURVE;
-    private static final ECDomainParameters DOMAIN;
-
-    static {
-        CURVE = SECNamedCurves.getByName("secp256k1");
-        DOMAIN = new ECDomainParameters(
-            CURVE.getCurve(),
-            CURVE.getG(),
-            CURVE.getN(),
-            CURVE.getH()
-        );
-    }
+    /** Upper bound on RFC 6979 candidate nonces before giving up. */
+    private static final int MAX_NONCE_TRIES = 1000;
 
     private Secp256k1() {
         // prevent instantiation
@@ -51,10 +36,12 @@ public final class Secp256k1 {
      * @throws CryptoError if the private key is invalid (zero or >= curve order)
      */
     public static byte[] publicKeyFromPrivate(byte[] privateKey32) throws CryptoError {
-        BigInteger privKeyInt = new BigInteger(1, privateKey32);
-        validatePrivateKey(privKeyInt);
-        ECPoint point = DOMAIN.getG().multiply(privKeyInt).normalize();
-        return point.getEncoded(true);
+        int[] d = parsePrivateKey(privateKey32);
+        try {
+            return EcPoint.G.multiply(d).encodeCompressed();
+        } finally {
+            Fe.wipe(d);
+        }
     }
 
     /**
@@ -67,32 +54,75 @@ public final class Secp256k1 {
      */
     public static byte[] pointAdd(byte[] pubKey1, byte[] pubKey2) throws CryptoError {
         try {
-            ECPoint p1 = CURVE.getCurve().decodePoint(pubKey1);
-            ECPoint p2 = CURVE.getCurve().decodePoint(pubKey2);
-            ECPoint sum = p1.add(p2).normalize();
-            return sum.getEncoded(true);
-        } catch (Exception e) {
+            EcPoint p1 = EcPoint.decodeCompressed(pubKey1);
+            EcPoint p2 = EcPoint.decodeCompressed(pubKey2);
+            EcPoint sum = p1.add(p2);
+            if (sum.isInfinity()) {
+                throw new CryptoError(CryptoError.ERR_INVALID_KEY,
+                    "Point addition failed: result is the point at infinity");
+            }
+            return sum.encodeCompressed();
+        } catch (IllegalArgumentException e) {
             throw new CryptoError(CryptoError.ERR_INVALID_KEY,
                 "Point addition failed: " + e.getMessage());
         }
     }
 
     /**
-     * Return the curve order n.
-     *
-     * @return the order of the secp256k1 generator point
+     * @return the curve order n as 32 big-endian bytes
      */
-    public static BigInteger getN() {
-        return CURVE.getN();
+    public static byte[] getNBytes() {
+        return Fe.N.toBytes();
     }
 
     /**
-     * Return the EC domain parameters for secp256k1.
-     *
-     * @return ECDomainParameters instance
+     * @param key candidate private key
+     * @return true if key is 32 bytes and 0 &lt; key &lt; n
      */
-    public static ECDomainParameters getDomain() {
-        return DOMAIN;
+    public static boolean isValidPrivateKey(byte[] key) {
+        if (key == null || key.length != 32) {
+            return false;
+        }
+        int[] v = Fe.fromBytes(key, 0);
+        boolean ok = !Fe.isZero(v) && Fe.isBelow(v, Fe.N);
+        Fe.wipe(v);
+        return ok;
+    }
+
+    /**
+     * @param scalar 32-byte big-endian scalar
+     * @return true if scalar &lt; n (zero allowed)
+     */
+    public static boolean isScalarBelowN(byte[] scalar) {
+        if (scalar == null || scalar.length != 32) {
+            return false;
+        }
+        int[] v = Fe.fromBytes(scalar, 0);
+        boolean ok = Fe.isBelow(v, Fe.N);
+        Fe.wipe(v);
+        return ok;
+    }
+
+    /**
+     * Compute (a + b) mod n for BIP32 child key derivation.
+     *
+     * @param a 32-byte scalar below n
+     * @param b 32-byte scalar below n
+     * @return 32-byte big-endian result (may be zero; callers must check)
+     * @throws CryptoError if either input is not a scalar below n
+     */
+    public static byte[] addScalarsModN(byte[] a, byte[] b) throws CryptoError {
+        if (!isScalarBelowN(a) || !isScalarBelowN(b)) {
+            throw new CryptoError(CryptoError.ERR_INVALID_KEY, "Scalar out of range");
+        }
+        int[] fa = Fe.fromBytes(a, 0);
+        int[] fb = Fe.fromBytes(b, 0);
+        int[] r = Fe.add(fa, fb, Fe.N);
+        byte[] out = Fe.toBytes(r);
+        Fe.wipe(fa);
+        Fe.wipe(fb);
+        Fe.wipe(r);
+        return out;
     }
 
     /**
@@ -109,34 +139,80 @@ public final class Secp256k1 {
             throw new CryptoError(CryptoError.ERR_SIGNING,
                 "Message hash must be exactly 32 bytes");
         }
-
-        BigInteger privKeyInt = new BigInteger(1, privateKey);
-        validatePrivateKey(privKeyInt);
-
+        int[] d = parsePrivateKey(privateKey);
+        int[] z = Fe.fromBytesMod(messageHash, Fe.N);
+        byte[] x = ByteArrayUtils.copyOf(privateKey, 32);
+        byte[] h1 = Fe.toBytes(z);
+        byte[] v = new byte[32];
+        byte[] k = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            v[i] = 0x01;
+        }
+        // RFC 6979 section 3.2 steps b-g
+        Hmac hmac = new Hmac(new Sha256(), k);
+        hmac.update(v, 0, 32);
+        hmac.update((byte) 0x00);
+        hmac.update(x, 0, 32);
+        hmac.update(h1, 0, 32);
+        hmac.doFinal(k, 0);
+        hmac.destroy();
+        hmac = new Hmac(new Sha256(), k);
+        hmac.update(v, 0, 32);
+        hmac.doFinal(v, 0);
+        hmac.update(v, 0, 32);
+        hmac.update((byte) 0x01);
+        hmac.update(x, 0, 32);
+        hmac.update(h1, 0, 32);
+        hmac.doFinal(k, 0);
+        hmac.destroy();
+        hmac = new Hmac(new Sha256(), k);
+        hmac.update(v, 0, 32);
+        hmac.doFinal(v, 0);
         try {
-            ECDSASigner signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest()));
-            ECPrivateKeyParameters keyParams = new ECPrivateKeyParameters(privKeyInt, DOMAIN);
-            signer.init(true, keyParams);
-
-            BigInteger[] components = signer.generateSignature(messageHash);
-            BigInteger r = components[0];
-            BigInteger s = components[1];
-
-            // Low-S normalization (BIP 62/146)
-            BigInteger halfN = CURVE.getN().shiftRight(1);
-            if (s.compareTo(halfN) > 0) {
-                s = CURVE.getN().subtract(s);
+            for (int attempt = 0; attempt < MAX_NONCE_TRIES; attempt++) {
+                // step h: T = HMAC_K(V); k = bits2int(T)
+                hmac.update(v, 0, 32);
+                hmac.doFinal(v, 0);
+                int[] kk = Fe.fromBytes(v, 0);
+                if (!Fe.isZero(kk) && Fe.isBelow(kk, Fe.N)) {
+                    EcPoint rp = EcPoint.G.multiply(kk).normalize();
+                    int[] r = Fe.fromBytesMod(Fe.toBytes(rp.getX()), Fe.N);
+                    if (!Fe.isZero(r)) {
+                        int[] kinv = Fe.inv(kk, Fe.N);
+                        int[] rd = Fe.mul(r, d, Fe.N);
+                        int[] s = Fe.mul(kinv, Fe.add(z, rd, Fe.N), Fe.N);
+                        Fe.wipe(kinv);
+                        Fe.wipe(rd);
+                        if (!Fe.isZero(s)) {
+                            if (Fe.isHighS(s)) {
+                                s = Fe.neg(s, Fe.N);
+                            }
+                            byte[] result = new byte[64];
+                            System.arraycopy(Fe.toBytes(r), 0, result, 0, 32);
+                            System.arraycopy(Fe.toBytes(s), 0, result, 32, 32);
+                            Fe.wipe(kk);
+                            return result;
+                        }
+                    }
+                }
+                Fe.wipe(kk);
+                // retry: K = HMAC_K(V || 0x00); V = HMAC_K(V)
+                hmac.update(v, 0, 32);
+                hmac.update((byte) 0x00);
+                hmac.doFinal(k, 0);
+                hmac.destroy();
+                hmac = new Hmac(new Sha256(), k);
+                hmac.update(v, 0, 32);
+                hmac.doFinal(v, 0);
             }
-
-            byte[] result = new byte[64];
-            byte[] rBytes = toUnsigned32(r);
-            byte[] sBytes = toUnsigned32(s);
-            System.arraycopy(rBytes, 0, result, 0, 32);
-            System.arraycopy(sBytes, 0, result, 32, 32);
-            return result;
-        } catch (Exception e) {
-            throw new CryptoError(CryptoError.ERR_SIGNING,
-                "ECDSA signing failed: " + e.getMessage());
+            throw new CryptoError(CryptoError.ERR_SIGNING, "ECDSA signing failed: no valid nonce");
+        } finally {
+            Fe.wipe(d);
+            Fe.wipe(z);
+            ByteArrayUtils.zeroFill(x);
+            ByteArrayUtils.zeroFill(v);
+            ByteArrayUtils.zeroFill(k);
+            hmac.destroy();
         }
     }
 
@@ -163,27 +239,29 @@ public final class Secp256k1 {
             throw new CryptoError(CryptoError.ERR_SIGNING,
                 "Compressed public key must be exactly 33 bytes");
         }
-
+        EcPoint q;
         try {
-            byte[] rBytes = new byte[32];
-            byte[] sBytes = new byte[32];
-            System.arraycopy(signature, 0, rBytes, 0, 32);
-            System.arraycopy(signature, 32, sBytes, 0, 32);
-
-            BigInteger r = new BigInteger(1, rBytes);
-            BigInteger s = new BigInteger(1, sBytes);
-
-            ECPoint point = CURVE.getCurve().decodePoint(compressedPubKey);
-            ECPublicKeyParameters keyParams = new ECPublicKeyParameters(point, DOMAIN);
-
-            ECDSASigner signer = new ECDSASigner();
-            signer.init(false, keyParams);
-
-            return signer.verifySignature(messageHash, r, s);
-        } catch (Exception e) {
+            q = EcPoint.decodeCompressed(compressedPubKey);
+        } catch (IllegalArgumentException e) {
             throw new CryptoError(CryptoError.ERR_SIGNING,
                 "Signature verification failed: " + e.getMessage());
         }
+        int[] r = Fe.fromBytes(signature, 0);
+        int[] s = Fe.fromBytes(signature, 32);
+        if (Fe.isZero(r) || !Fe.isBelow(r, Fe.N) || Fe.isZero(s) || !Fe.isBelow(s, Fe.N)) {
+            return false;
+        }
+        int[] z = Fe.fromBytesMod(messageHash, Fe.N);
+        int[] w = Fe.inv(s, Fe.N);
+        int[] u1 = Fe.mul(z, w, Fe.N);
+        int[] u2 = Fe.mul(r, w, Fe.N);
+        EcPoint rp = EcPoint.G.multiply(u1).add(q.multiply(u2));
+        if (rp.isInfinity()) {
+            return false;
+        }
+        rp = rp.normalize();
+        int[] v = Fe.fromBytesMod(Fe.toBytes(rp.getX()), Fe.N);
+        return Fe.equals(v, r);
     }
 
     /**
@@ -249,37 +327,23 @@ public final class Secp256k1 {
     }
 
     /**
-     * Convert a BigInteger to a 32-byte unsigned big-endian byte array.
-     * Pads with leading zeros or strips the leading sign byte as needed.
+     * Parse and validate a private key scalar in range (0, n).
      */
-    private static byte[] toUnsigned32(BigInteger value) {
-        byte[] bytes = value.toByteArray();
-        if (bytes.length == 32) {
-            return bytes;
-        } else if (bytes.length > 32) {
-            // Strip leading zero byte (sign byte from BigInteger)
-            byte[] result = new byte[32];
-            System.arraycopy(bytes, bytes.length - 32, result, 0, 32);
-            return result;
-        } else {
-            // Pad with leading zeros
-            byte[] result = new byte[32];
-            System.arraycopy(bytes, 0, result, 32 - bytes.length, bytes.length);
-            return result;
+    private static int[] parsePrivateKey(byte[] privateKey) throws CryptoError {
+        if (privateKey == null || privateKey.length != 32) {
+            throw new CryptoError(CryptoError.ERR_INVALID_KEY,
+                "Private key must be exactly 32 bytes");
         }
-    }
-
-    /**
-     * Validate that a private key scalar is in range (0, n).
-     */
-    private static void validatePrivateKey(BigInteger privKey) throws CryptoError {
-        if (privKey.signum() <= 0) {
+        int[] d = Fe.fromBytes(privateKey, 0);
+        if (Fe.isZero(d)) {
             throw new CryptoError(CryptoError.ERR_INVALID_KEY,
                 "Private key must be greater than zero");
         }
-        if (privKey.compareTo(CURVE.getN()) >= 0) {
+        if (!Fe.isBelow(d, Fe.N)) {
+            Fe.wipe(d);
             throw new CryptoError(CryptoError.ERR_INVALID_KEY,
                 "Private key must be less than curve order n");
         }
+        return d;
     }
 }
