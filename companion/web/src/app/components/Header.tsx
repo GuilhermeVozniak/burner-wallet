@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { Network } from "@/lib/crypto";
 
 interface HeaderProps {
@@ -32,7 +33,18 @@ export default function Header({ network }: HeaderProps) {
         gap: "0.5rem",
       }}
     >
-      <Link href="/" style={{ textDecoration: "none" }}>
+      <Link
+        href="/"
+        style={{ display: "inline-flex", alignItems: "center", gap: "0.65rem", textDecoration: "none" }}
+      >
+        <Image
+          src="/brand/mark.svg"
+          alt=""
+          width={40}
+          height={40}
+          unoptimized
+          style={{ flexShrink: 0 }}
+        />
         <span
           style={{
             color: "#0ff",

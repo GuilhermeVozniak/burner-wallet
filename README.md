@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="companion/web/public/brand/logo-dark.svg">
+  <img src="companion/web/public/brand/logo-light.svg" alt="Burner Wallet" width="360" height="112">
+</picture>
+
 # Burner Wallet
 
 **Air-gapped Bitcoin wallet for Nokia feature phones.**

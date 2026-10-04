@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="#00ffff" role="img" aria-labelledby="title desc">
+  <title id="title">Burner Wallet</title>
+  <desc id="desc">A flame shaped like a feature phone, with a screen and four keypad buttons.</desc>
+  <path fill-rule="evenodd" d="M32 4C32 16 16 21 16 34v14c0 8 5 12 12 12h8c7 0 12-4 12-12V34c0-8-4-15-9-19 2 7 0 12-5 14 4-10 2-18-2-25ZM24 33h16v8H24Zm0 13h6v4h-6Zm10 0h6v4h-6Zm-10 7h6v3h-6Zm10 0h6v3h-6Z"/>
+</svg>
