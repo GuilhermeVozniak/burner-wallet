@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project logo:** Flame-and-keypad SVG mark with light, dark, and monochrome variants, integrated into the README, web header, and favicon.
 - Companion TUI unit tests: 30 tests covering app state machine, screen transitions, send/receive flows
 - CI signer workflow: enabled build, test (224 tests), and JAR size check
 - **Transaction history (TUI):** BDK wallet transaction listing with confirmed/unconfirmed status, net amounts, and txid display

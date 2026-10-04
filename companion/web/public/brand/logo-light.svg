@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 112" role="img" aria-labelledby="title desc">
+  <title id="title">Burner Wallet</title>
+  <desc id="desc">Flame and feature-phone symbol beside the Burner Wallet wordmark.</desc>
+  <g transform="translate(4 8) scale(1.5)" fill="#007d85"><path fill-rule="evenodd" d="M32 4C32 16 16 21 16 34v14c0 8 5 12 12 12h8c7 0 12-4 12-12V34c0-8-4-15-9-19 2 7 0 12-5 14 4-10 2-18-2-25ZM24 33h16v8H24Zm0 13h6v4h-6Zm10 0h6v4h-6Zm-10 7h6v3h-6Zm10 0h6v3h-6Z"/></g>
+  <g fill="none" stroke="#152a35" stroke-linecap="square" stroke-linejoin="round">
+    <g transform="translate(116 25) scale(1.15)" stroke-width="3.6"><path transform="translate(0 0)" d="M0 32V0h12q8 0 8 8t-8 8H0m12 0q10 0 10 8t-10 8H0"/><path transform="translate(30 0)" d="M0 0v22q0 10 10 10t10-10V0"/><path transform="translate(60 0)" d="M0 32V0h12q8 0 8 8t-8 8H0m11 0 11 16"/><path transform="translate(90 0)" d="M0 32V0l20 32V0"/><path transform="translate(120 0)" d="M20 0H0v32h20M0 16h16"/><path transform="translate(150 0)" d="M0 32V0h12q8 0 8 8t-8 8H0m11 0 11 16"/></g>
+    <g transform="translate(116 78) scale(.45)" stroke-width="4"><path transform="translate(0 0)" d="M0 0l5 32 9-22 9 22 5-32"/><path transform="translate(43 0)" d="M0 32 10 0l10 32M4 21h12"/><path transform="translate(86 0)" d="M0 0v32h20"/><path transform="translate(129 0)" d="M0 0v32h20"/><path transform="translate(172 0)" d="M20 0H0v32h20M0 16h16"/><path transform="translate(215 0)" d="M0 0h24M12 0v32"/></g>
+  </g>
+</svg>
